@@ -13,7 +13,8 @@ ENV/
 .env
 
 # Ignore database files
-data/
+data/leetcode_bot.db
+data/scheduler_state.json
 *.db
 *.sqlite
 *.sqlite3
@@ -32,6 +33,3 @@ logs/
 # Ignore OS files
 .DS_Store
 Thumbs.db
-
-# Allow problem_bank.json in data/
-!data/problem_bank.json
