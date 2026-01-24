@@ -18,6 +18,7 @@ data/
 *.sqlite
 *.sqlite3
 
+
 # Ignore IDE files
 .vscode/
 .idea/
@@ -31,3 +32,6 @@ logs/
 # Ignore OS files
 .DS_Store
 Thumbs.db
+
+# Allow problem_bank.json in data/
+!data/problem_bank.json
