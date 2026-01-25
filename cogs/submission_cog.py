@@ -1,6 +1,10 @@
 """
-Submission Cog - Handle LeetCode problem submissions with slash commands
-Includes channel restrictions, rate limiting, and full validation
+Submission Cog - POTD vs Non-POTD Evaluation Logic
+--------------------------------------------------
+Updated based on Internal Design Note:
+1. POTD Problems: Fixed 15 pts base + Bonus for 2nd/3rd solve of the day.
+2. Non-POTD Problems: Standard Difficulty Scoring (10/20/40).
+3. Streaks: Calculated normally.
 """
 
 import discord
@@ -13,288 +17,165 @@ from utils.logic import (
     validate_submission,
     calculate_streaks,
     calculate_points,
-    format_streak_message,
-    validate_difficulty,
     SubmissionStatus
 )
-from utils.leetcode_api import get_leetcode_api
-
 
 # Allowed channels for submissions
 ALLOWED_CHANNELS = ["dsa", "potd"]
 
-
 class SubmissionCog(commands.Cog):
-    """Cog for handling problem submissions with slash commands"""
-    
     def __init__(self, bot):
         self.bot = bot
-        print("  → SubmissionCog initialized with /leetcode_submit command")
-        
+        print("  → SubmissionCog initialized (New Scoring Model)")
+
     def check_channel(self, interaction: discord.Interaction) -> bool:
-        """
-        Check if command is used in an allowed channel
-        """
-        if not interaction.channel:
-            return False
-            
-        channel_name = interaction.channel.name.lower()
-        return channel_name in ALLOWED_CHANNELS
-    
-    @app_commands.command(
-        name="leetcode_submit",
-        description="Submit a completed LeetCode problem"
-    )
-    @app_commands.describe(
-        problem_name="LeetCode problem name or slug (e.g., 'two-sum' or 'Two Sum')"
-    )
-    @app_commands.checks.cooldown(1, 30.0, key=lambda i: i.user.id)  # 1 submission per 30 seconds
-    async def leetcode_submit(
-        self,
-        interaction: discord.Interaction,
-        problem_name: str
-    ):
-        # ============ CHANNEL RESTRICTION CHECK ============
+        if not interaction.channel: return False
+        return interaction.channel.name.lower() in ALLOWED_CHANNELS
+
+    @app_commands.command(name="leetcode_submit", description="Submit a completed LeetCode problem")
+    @app_commands.describe(problem_name="LeetCode problem name or slug")
+    @app_commands.checks.cooldown(1, 10.0, key=lambda i: i.user.id)
+    async def leetcode_submit(self, interaction: discord.Interaction, problem_name: str):
+        
+        # 1. Channel Check
         if not self.check_channel(interaction):
             await interaction.response.send_message(
                 embed=discord.Embed(
-                    title="🚫 Wrong Channel",
-                    description=(
-                        f"The `/leetcode_submit` command can only be used in:\n"
-                        f"• <#{interaction.guild.text_channels[0].id}> (if #dsa exists)\n"
-                        f"• <#{interaction.guild.text_channels[0].id}> (if #potd exists)\n\n"
-                        f"Current channel: #{interaction.channel.name}"
-                    ),
+                    title="🚫 Wrong Channel", 
+                    description="Please use #dsa or #potd.", 
                     color=config.COLOR_ERROR
-                ),
+                ), 
                 ephemeral=True
             )
             return
-        
-        # Defer response as database operations might take time
+
         await interaction.response.defer()
-        
+
         try:
-            # ============ STEP 1: NORMALIZE INPUT ============
+            # 2. Setup Data
             discord_id = interaction.user.id
             problem_slug = normalize_problem_name(problem_name)
-            
-            # ============ STEP 2: CHECK/CREATE USER ============
+            today_str = datetime.now().date().isoformat()
+            now = datetime.now()
+
+            # 3. Ensure User Exists
             user = await self.bot.db.get_user(discord_id)
             if not user:
                 await self.bot.db.create_user(discord_id)
                 user = await self.bot.db.get_user(discord_id)
-            
-            # ============ STEP 3: VALIDATE SUBMISSION ============
-            # Show "Checking LeetCode..." message
-            checking_embed = discord.Embed(
-                title="🔍 Checking LeetCode...",
-                description=f"Verifying problem: `{problem_slug}`",
-                color=config.COLOR_PRIMARY
+
+            # 4. Verify Submission (API Check)
+            await interaction.followup.send(
+                embed=discord.Embed(description=f"🔍 Verifying `{problem_slug}`...", color=config.COLOR_PRIMARY)
             )
-            await interaction.followup.send(embed=checking_embed)
-            
+
             status, message, problem_data = await validate_submission(
-                self.bot.db,
-                discord_id,
-                problem_slug,
-                None  # Difficulty auto-detected from LeetCode API
+                self.bot.db, discord_id, problem_slug, current_date=now
             )
-            
-            # ============ HANDLE DUPLICATE SUBMISSION ============
-            if status == SubmissionStatus.DUPLICATE:
+
+            if status != SubmissionStatus.VALID:
+                color = config.COLOR_WARNING if status == SubmissionStatus.DUPLICATE else config.COLOR_ERROR
                 await interaction.edit_original_response(
-                    embed=discord.Embed(
-                        title="⚠️ Already Solved!",
-                        description=(
-                            f"**Problem:** `{problem_slug}`\n"
-                            f"**Status:** You've already submitted this problem.\n\n"
-                            f"**Points Awarded:** 0 (no duplicate points)\n\n"
-                            f"💡 Try submitting a different problem to keep your streak going!"
-                        ),
-                        color=config.COLOR_WARNING
-                    )
+                    embed=discord.Embed(title="Submission Failed", description=message, color=color)
                 )
                 return
+
+            # ==================================================================
+            # 5. NEW SCORING LOGIC (The Core Change)
+            # ==================================================================
             
-            # ============ HANDLE INVALID SUBMISSION ============
-            if status == SubmissionStatus.INVALID:
-                await interaction.edit_original_response(
-                    embed=discord.Embed(
-                        title="❌ Invalid Submission",
-                        description=message,
-                        color=config.COLOR_ERROR
-                    )
-                )
-                return
-            
-            # ============ VALID SUBMISSION - PROCESS ============
-            
-            # Extract real problem data from API
             real_difficulty = problem_data["difficulty"]
             real_title = problem_data["title"]
-            question_id = problem_data["question_id"]
             
-            # Ensure problem exists in database (for tracking purposes)
-            problem = await self.bot.db.get_problem(problem_slug)
-            if not problem:
-                # Auto-create problem with real data from LeetCode
-                await self.bot.db.create_problem(
-                    problem_slug=problem_slug,
-                    difficulty=real_difficulty,
-                    topic="General",
-                    date_posted=datetime.now().date().isoformat()
-                )
+            # Check if this is today's POTD
+            is_potd = await self.bot.db.is_problem_potd(problem_slug, today_str)
             
-            # ============ STEP 4: CALCULATE POINTS ============
-            base_points = calculate_points(real_difficulty, is_duplicate=False)
-            total_points = base_points
-            
-            # ============ STEP 5: CALCULATE STREAKS ============
-            now = datetime.now()
-            current_week = now.strftime("%Y-%W")
-            
-            streak_result = calculate_streaks(user, now)
-            daily_streak = streak_result["daily_streak"]
-            weekly_streak = streak_result["weekly_streak"]
-            streak_maintained = streak_result["streak_maintained"]
-            new_week = streak_result["new_week"]
-            
-            # Apply streak bonuses
+            base_points = 0
             bonus_points = 0
-            bonus_messages = []
+            bonus_desc = []
             
-            if not streak_maintained:
-                # New submission today (not already submitted)
+            if is_potd:
+                # --- POTD SCORING ---
+                base_points = 15  # Fixed base for POTD
+                
+                # Check how many POTDs user has ALREADY solved today
+                count_before_this = await self.bot.db.get_user_potd_count(discord_id, today_str)
+                solve_number = count_before_this + 1
+                
+                if solve_number == 2:
+                    bonus_points = 5
+                    bonus_desc.append("🎯 Double Trouble! (+5)")
+                elif solve_number == 3:
+                    bonus_points = 10
+                    bonus_desc.append("🔥 Hat Trick! (+10)")
+                    
+                type_label = "🏆 Problem of the Day"
+            else:
+                # --- NON-POTD SCORING ---
+                base_points = calculate_points(real_difficulty)
+                type_label = f"⚡ {real_difficulty} Problem"
+
+            # ==================================================================
+
+            # 6. Streak Calculation
+            current_week = now.strftime("%Y-%W")
+            streak_data = calculate_streaks(user, now)
+            
+            daily_streak = streak_data["daily_streak"]
+            weekly_streak = streak_data["weekly_streak"]
+            
+            # Apply Streak Bonuses (if not maintained/already awarded today)
+            if not streak_data["streak_maintained"]:
                 if daily_streak > 1:
                     bonus_points += config.DAILY_STREAK_BONUS
-                    bonus_messages.append(f"+{config.DAILY_STREAK_BONUS} daily streak bonus")
-                
-                if new_week and weekly_streak > 1:
+                    bonus_desc.append(f"⚡ Daily Streak (+{config.DAILY_STREAK_BONUS})")
+                if streak_data["new_week"] and weekly_streak > 1:
                     bonus_points += config.WEEKLY_STREAK_BONUS
-                    bonus_messages.append(f"+{config.WEEKLY_STREAK_BONUS} weekly streak bonus")
-            
-            total_points += bonus_points
-            
-            # ============ STEP 6: UPDATE DATABASE ============
-            
-            # Record submission
-            submission_date = now.isoformat()
-            submission_id = await self.bot.db.create_submission(
-                discord_id=discord_id,
-                problem_slug=problem_slug,
-                submission_date=submission_date,
-                points_awarded=total_points
-            )
-            
-            # Update user points
-            await self.bot.db.update_user_points(discord_id, total_points)
-            
-            # Update user streaks
-            await self.bot.db.update_user_streaks(
-                discord_id=discord_id,
-                daily_streak=daily_streak,
-                weekly_streak=weekly_streak,
-                last_submission_date=submission_date,
-                last_week_submitted=current_week
-            )
-            
-            # ============ STEP 7: SEND SUCCESS RESPONSE ============
-            
+                    bonus_desc.append(f"📅 Weekly Streak (+{config.WEEKLY_STREAK_BONUS})")
+
+            final_points = base_points + bonus_points
+
+            # 7. Update Database
+            # Ensure problem exists in DB (for tracking)
+            if not await self.bot.db.get_problem(problem_slug):
+                await self.bot.db.create_problem(
+                    problem_slug=problem_slug,
+                    problem_title=real_title,     # <--- Added Title
+                    difficulty=real_difficulty,   # <--- Corrected mapping
+                    topic="General",
+                    date_posted=today_str         # <--- Explicitly passed to correct arg
+                )
+
+            await self.bot.db.create_submission(discord_id, problem_slug, now.isoformat(), final_points)
+            await self.bot.db.update_user_points(discord_id, final_points)
+            await self.bot.db.update_user_streaks(discord_id, daily_streak, weekly_streak, now.isoformat(), current_week)
+
+            # 8. Final Response
             updated_user = await self.bot.db.get_user(discord_id)
             
-            embed = discord.Embed(
-                title="✅ Accepted!",
-                description=f"Successfully submitted **{real_title}** (#{question_id})",
-                color=config.COLOR_SUCCESS
-            )
+            embed = discord.Embed(title="✅ Accepted!", color=config.COLOR_SUCCESS)
+            embed.add_field(name="Problem", value=f"[{real_title}](https://leetcode.com/problems/{problem_slug})", inline=True)
+            embed.add_field(name="Type", value=type_label, inline=True)
             
-            embed.add_field(name="📝 Problem", value=f"[{real_title}](https://leetcode.com/problems/{problem_slug})", inline=True)
-            embed.add_field(name="⚡ Difficulty", value=real_difficulty, inline=True)
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
-            
-            points_text = f"**+{total_points}** points"
+            pts_display = f"**+{final_points}**"
             if bonus_points > 0:
-                points_text += f"\n({base_points} base + {bonus_points} bonus)"
+                pts_display += f" ({base_points} + {bonus_points} bonus)"
             
-            embed.add_field(name="💰 Points Earned", value=points_text, inline=True)
-            embed.add_field(name="🏆 Total Points", value=f"**{updated_user['total_points']}**", inline=True)
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
+            embed.add_field(name="Points", value=pts_display, inline=True)
+            embed.add_field(name="Total Score", value=f"**{updated_user['total_points']}**", inline=True)
             
-            embed.add_field(name="🔥 Daily Streak", value=f"**{daily_streak}** day{'s' if daily_streak != 1 else ''}", inline=True)
-            embed.add_field(name="📅 Weekly Streak", value=f"**{weekly_streak}** week{'s' if weekly_streak != 1 else ''}", inline=True)
-            embed.add_field(name="\u200b", value="\u200b", inline=True)
+            if bonus_desc:
+                embed.add_field(name="🎉 Bonuses", value="\n".join(bonus_desc), inline=False)
+                
+            embed.set_footer(text=f"Streak: {daily_streak} Days | {weekly_streak} Weeks")
             
-            if bonus_messages:
-                embed.add_field(name="🎁 Bonuses Applied", value="\n".join(f"• {msg}" for msg in bonus_messages), inline=False)
-            
-            if daily_streak >= 7:
-                footer_msg = f"🔥 Amazing! {daily_streak}-day streak! Keep it going!"
-            elif daily_streak >= 3:
-                footer_msg = f"Great progress! {daily_streak} days in a row!"
-            else:
-                footer_msg = "Keep grinding! 💪"
-            
-            embed.set_footer(text=footer_msg, icon_url=interaction.user.display_avatar.url)
-            embed.timestamp = datetime.now()
-            
-            # Edit the checking message with success
             await interaction.edit_original_response(embed=embed)
-            
+
         except Exception as e:
-            print(f"Error in submit command: {e}")
+            print(f"Error in submit: {e}")
             import traceback
             traceback.print_exc()
-            
-            error_embed = discord.Embed(
-                title="❌ Error",
-                description="An unexpected error occurred. Please try again later.",
-                color=config.COLOR_ERROR
-            )
-            
-            try:
-                if interaction.response.is_done():
-                    await interaction.edit_original_response(embed=error_embed)
-                else:
-                    await interaction.response.send_message(embed=error_embed, ephemeral=True)
-            except:
-                pass
-    
-    @leetcode_submit.error
-    async def leetcode_submit_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        if isinstance(error, app_commands.CommandOnCooldown):
-            retry_after = int(error.retry_after)
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="⏱️ Cooldown Active",
-                    description=f"Please wait **{retry_after}s** before submitting again.",
-                    color=config.COLOR_WARNING
-                ),
-                ephemeral=True
-            )
-        else:
-            print(f"Error in submit command: {error}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    embed=discord.Embed(title="❌ Error", description="An error occurred.", color=config.COLOR_ERROR),
-                    ephemeral=True
-                )
-    
-    # ============ LEGACY PREFIX COMMAND SUPPORT ============
-    @commands.command(name="submit", aliases=["sub"])
-    async def submit_prefix(self, ctx, problem_name: str, difficulty: str = None):
-        await ctx.send(
-            embed=discord.Embed(
-                title="ℹ️ Use Slash Command",
-                description=f"Please use `/leetcode_submit problem_name:{problem_name}` instead!",
-                color=config.COLOR_INFO
-            )
-        )
-
+            await interaction.edit_original_response(content="❌ An internal error occurred.")
 
 async def setup(bot):
-    """
-    Load the SubmissionCog using standard registration.
-    """
     await bot.add_cog(SubmissionCog(bot))
-    print("  ✓ SubmissionCog loaded (Standard Method)")

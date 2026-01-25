@@ -13,8 +13,7 @@ ENV/
 .env
 
 # Ignore database files
-data/leetcode_bot.db
-data/scheduler_state.json
+data/
 *.db
 *.sqlite
 *.sqlite3

@@ -82,7 +82,9 @@ class DatabaseManager:
                     "daily_streak": row[2],
                     "weekly_streak": row[3],
                     "last_submission_date": row[4],
-                    "last_week_submitted": row[5]
+                    "last_week_submitted": row[5],
+                    "student_year": row[6],
+                    "leetcode_username": row[7]
                 }
         return None
         
@@ -98,6 +100,37 @@ class DatabaseManager:
             (discord_id,)
         )
         await self.db.commit()
+        
+    async def update_user_profile(
+        self,
+        discord_id: int,
+        student_year: str = None,
+        leetcode_username: str = None
+    ) -> None:
+        """
+        Update user profile information (year level and/or LeetCode username)
+        
+        Args:
+            discord_id: Discord user ID
+            student_year: Student year level (1, 2, 3, 4, or General)
+            leetcode_username: LeetCode username
+        """
+        updates = []
+        params = []
+        
+        if student_year is not None:
+            updates.append("student_year = ?")
+            params.append(student_year)
+            
+        if leetcode_username is not None:
+            updates.append("leetcode_username = ?")
+            params.append(leetcode_username)
+            
+        if updates:
+            params.append(discord_id)
+            query = f"UPDATE Users SET {', '.join(updates)} WHERE discord_id = ?"
+            await self.db.execute(query, tuple(params))
+            await self.db.commit()
         
     async def update_user_points(self, discord_id: int, points_to_add: int) -> None:
         """
@@ -167,7 +200,7 @@ class DatabaseManager:
                     "date_posted": row[3]
                 }
         return None
-        
+
     async def create_problem(
         self, 
         problem_slug: str, 
@@ -176,24 +209,18 @@ class DatabaseManager:
         topic: str = None, 
         date_posted: str = None
     ) -> None:
-        """
-        Add a new problem to the database
-        
-        Args:
-            problem_slug: LeetCode problem slug
-            problem_title: Human-readable problem title (optional)
-            difficulty: Problem difficulty (Easy, Medium, or Hard)
-            topic: Problem topic/category
-            date_posted: Date when problem was posted
-        """
+        """Add or Update a problem in the database"""
         # Check if problem already exists
         existing = await self.get_problem(problem_slug)
         
         if existing:
-            # Update only the fields that are provided
+            # Update provided fields
             updates = []
             params = []
             
+            if problem_title:
+                updates.append("problem_title = ?")
+                params.append(problem_title)
             if difficulty:
                 updates.append("difficulty = ?")
                 params.append(difficulty)
@@ -210,12 +237,18 @@ class DatabaseManager:
                 await self.db.execute(query, tuple(params))
                 await self.db.commit()
         else:
-            # Insert new problem
+            # Insert new problem (Fixed to include problem_title)
             await self.db.execute(
                 """INSERT INTO Problems 
-                   (problem_slug, difficulty, topic, date_posted) 
-                   VALUES (?, ?, ?, ?)""",
-                (problem_slug, difficulty or "Medium", topic or "General", date_posted)
+                   (problem_slug, problem_title, difficulty, topic, date_posted) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    problem_slug, 
+                    problem_title or "Unknown Title", 
+                    difficulty or "Medium", 
+                    topic or "General", 
+                    date_posted
+                )
             )
             await self.db.commit()
         
@@ -335,3 +368,31 @@ class DatabaseManager:
                 }
                 for row in rows
             ]
+
+    # ============ POTD Specific Methods ============
+    
+    async def is_problem_potd(self, problem_slug: str, date_str: str) -> bool:
+        """
+        Check if a problem is assigned as POTD for a specific date.
+        """
+        async with self.db.execute(
+            "SELECT 1 FROM Problems WHERE problem_slug = ? AND date_posted = ?",
+            (problem_slug, date_str)
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+    async def get_user_potd_count(self, discord_id: int, date_str: str) -> int:
+        """
+        Count how many POTD problems a user has solved for a specific date.
+        """
+        # Join Submissions with Problems to find matches for the specific date
+        query = """
+        SELECT COUNT(DISTINCT s.problem_slug)
+        FROM Submissions s
+        JOIN Problems p ON s.problem_slug = p.problem_slug
+        WHERE s.discord_id = ? 
+          AND p.date_posted = ?
+        """
+        async with self.db.execute(query, (discord_id, date_str)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0

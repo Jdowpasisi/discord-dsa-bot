@@ -13,7 +13,7 @@ from .logic import (
 )
 
 from .leetcode_api import (
-    LeetCodeAPI,
+    LeetCodeService,
     ProblemData,
     get_leetcode_api,
     close_leetcode_api,
@@ -30,7 +30,7 @@ __all__ = [
     'SubmissionStatus',
     'Difficulty',
     'DIFFICULTY_POINTS',
-    'LeetCodeAPI',
+    'LeetCodeService',
     'ProblemData',
     'get_leetcode_api',
     'close_leetcode_api',

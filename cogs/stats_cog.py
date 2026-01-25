@@ -114,7 +114,7 @@ class StatsCog(commands.Cog):
                 GROUP BY u.discord_id
                 ORDER BY weekly_points DESC, u.total_points DESC
                 """,
-                (monday.date(), sunday.date())
+                (monday.isoformat(), sunday.isoformat())
             ) as cursor:
                 rows = await cursor.fetchall()
                 
@@ -158,7 +158,7 @@ class StatsCog(commands.Cog):
                 GROUP BY u.discord_id
                 ORDER BY monthly_points DESC, u.total_points DESC
                 """,
-                (first_day.date(), last_day.date())
+                (first_day.isoformat(), last_day.isoformat())
             ) as cursor:
                 rows = await cursor.fetchall()
                 
@@ -663,7 +663,7 @@ class StatsCog(commands.Cog):
                     GROUP BY u.discord_id
                     ORDER BY monthly_points DESC, u.total_points DESC
                     """,
-                    (first_day.date(), last_day.date())
+                    (first_day.isoformat(), last_day.isoformat())
                 ) as cursor:
                     rows = await cursor.fetchall()
                     

@@ -8,13 +8,16 @@ CREATE TABLE IF NOT EXISTS Users (
     daily_streak INTEGER DEFAULT 0,
     weekly_streak INTEGER DEFAULT 0,
     last_submission_date TEXT,  -- ISO format: YYYY-MM-DD HH:MM:SS
-    last_week_submitted TEXT    -- Format: YYYY-WW (e.g., "2026-03")
+    last_week_submitted TEXT,   -- Format: YYYY-WW (e.g., "2026-03")
+    student_year TEXT DEFAULT "General",  -- Valid values: "1", "2", "3", "4", "General"
+    leetcode_username TEXT UNIQUE -- User's LeetCode username (uniqueness enforced at app level)
 );
 
 -- Problems Table: Stores LeetCode problem information
 CREATE TABLE IF NOT EXISTS Problems (
     problem_slug TEXT PRIMARY KEY,
-    difficulty TEXT NOT NULL CHECK(difficulty IN ('Easy', 'Medium', 'Hard')),
+    problem_title TEXT,
+    difficulty TEXT,
     topic TEXT NOT NULL,
     date_posted TEXT NOT NULL  -- ISO format: YYYY-MM-DD
 );
