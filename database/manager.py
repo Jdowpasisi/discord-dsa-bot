@@ -84,7 +84,9 @@ class DatabaseManager:
                     "last_submission_date": row[4],
                     "last_week_submitted": row[5],
                     "student_year": row[6],
-                    "leetcode_username": row[7]
+                    "leetcode_username": row[7],
+                    "codeforces_handle": row[8],
+                    "gfg_handle": row[9]
                 }
         return None
         
@@ -102,10 +104,12 @@ class DatabaseManager:
         await self.db.commit()
         
     async def update_user_profile(
-        self,
-        discord_id: int,
-        student_year: str = None,
-        leetcode_username: str = None
+        self, 
+        discord_id: int, 
+        student_year: str = None, 
+        leetcode_username: str = None, 
+        codeforces_handle: str = None, 
+        gfg_handle: str = None
     ) -> None:
         """
         Update user profile information (year level and/or LeetCode username)
@@ -114,6 +118,8 @@ class DatabaseManager:
             discord_id: Discord user ID
             student_year: Student year level (1, 2, 3, 4, or General)
             leetcode_username: LeetCode username
+            codeforces_handle: Codeforces handle
+            gfg_handle: GeeksforGeeks handle
         """
         updates = []
         params = []
@@ -125,7 +131,15 @@ class DatabaseManager:
         if leetcode_username is not None:
             updates.append("leetcode_username = ?")
             params.append(leetcode_username)
+        
+        if codeforces_handle is not None:
+            updates.append("codeforces_handle = ?")
+            params.append(codeforces_handle)
             
+        if gfg_handle is not None:
+            updates.append("gfg_handle = ?")
+            params.append(gfg_handle)
+                
         if updates:
             params.append(discord_id)
             query = f"UPDATE Users SET {', '.join(updates)} WHERE discord_id = ?"
@@ -177,41 +191,55 @@ class DatabaseManager:
         
     # ============ Problem Management Methods ============
     
-    async def get_problem(self, problem_slug: str) -> Optional[dict]:
+    async def get_problem(self, problem_slug: str, platform: str = "LeetCode") -> Optional[dict]:
         """
-        Get problem information by slug
+        Get problem information by slug and platform
         
         Args:
-            problem_slug: LeetCode problem slug (e.g., "two-sum")
+            problem_slug: Problem slug (e.g., "two-sum")
+            platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
             
         Returns:
             Dictionary with problem data or None if not found
         """
         async with self.db.execute(
-            "SELECT * FROM Problems WHERE problem_slug = ?",
-            (problem_slug,)
+            "SELECT * FROM Problems WHERE problem_slug = ? AND platform = ?",
+            (problem_slug, platform)
         ) as cursor:
             row = await cursor.fetchone()
             if row:
                 return {
                     "problem_slug": row[0],
-                    "difficulty": row[1],
-                    "topic": row[2],
-                    "date_posted": row[3]
+                    "platform": row[1],
+                    "problem_title": row[2],
+                    "difficulty": row[3],
+                    "topic": row[4],
+                    "date_posted": row[5]
                 }
         return None
 
     async def create_problem(
         self, 
-        problem_slug: str, 
+        problem_slug: str,
+        platform: str = "LeetCode",
         problem_title: str = None,
         difficulty: str = None, 
         topic: str = None, 
         date_posted: str = None
     ) -> None:
-        """Add or Update a problem in the database"""
+        """
+        Add or Update a problem in the database
+        
+        Args:
+            problem_slug: Problem slug
+            platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
+            problem_title: Problem title
+            difficulty: Problem difficulty
+            topic: Problem topic/category
+            date_posted: Date when problem was posted as POTD (YYYY-MM-DD)
+        """
         # Check if problem already exists
-        existing = await self.get_problem(problem_slug)
+        existing = await self.get_problem(problem_slug, platform)
         
         if existing:
             # Update provided fields
@@ -227,31 +255,31 @@ class DatabaseManager:
             if topic:
                 updates.append("topic = ?")
                 params.append(topic)
-            if date_posted:
+            if date_posted is not None:  # Changed to explicit None check
                 updates.append("date_posted = ?")
                 params.append(date_posted)
             
             if updates:
-                params.append(problem_slug)
-                query = f"UPDATE Problems SET {', '.join(updates)} WHERE problem_slug = ?"
+                params.extend([problem_slug, platform])
+                query = f"UPDATE Problems SET {', '.join(updates)} WHERE problem_slug = ? AND platform = ?"
                 await self.db.execute(query, tuple(params))
                 await self.db.commit()
         else:
-            # Insert new problem (Fixed to include problem_title)
+            # Insert new problem - use NULL explicitly for date_posted if None
             await self.db.execute(
                 """INSERT INTO Problems 
-                   (problem_slug, problem_title, difficulty, topic, date_posted) 
-                   VALUES (?, ?, ?, ?, ?)""",
+                (problem_slug, platform, problem_title, difficulty, topic, date_posted) 
+                VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    problem_slug, 
+                    problem_slug,
+                    platform,
                     problem_title or "Unknown Title", 
                     difficulty or "Medium", 
                     topic or "General", 
-                    date_posted
+                    date_posted  # This will be None for non-POTD, which SQLite accepts as NULL
                 )
             )
-            await self.db.commit()
-        
+            await self.db.commit()   
     # ============ Submission Management Methods ============
     
     async def create_submission(
@@ -259,25 +287,29 @@ class DatabaseManager:
         discord_id: int,
         problem_slug: str,
         submission_date: str,
-        points_awarded: int
+        points_awarded: int,
+        platform: str = "LeetCode", 
+        verification_status: str = "Verified"
     ) -> int:
         """
         Record a new submission
         
         Args:
             discord_id: Discord user ID
-            problem_slug: LeetCode problem slug
+            problem_slug: Problem slug
             submission_date: Timestamp of submission
             points_awarded: Points awarded for this submission
+            platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
+            verification_status: Status of verification
             
         Returns:
             ID of the created submission
         """
         cursor = await self.db.execute(
             """INSERT INTO Submissions 
-               (discord_id, problem_slug, submission_date, points_awarded)
-               VALUES (?, ?, ?, ?)""",
-            (discord_id, problem_slug, submission_date, points_awarded)
+               (discord_id, problem_slug, platform, submission_date, points_awarded, verification_status)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (discord_id, problem_slug, platform, submission_date, points_awarded, verification_status)
         )
         await self.db.commit()
         return cursor.lastrowid
@@ -294,10 +326,10 @@ class DatabaseManager:
             List of submission dictionaries
         """
         async with self.db.execute(
-            """SELECT s.submission_id, s.discord_id, s.problem_slug, 
+            """SELECT s.submission_id, s.discord_id, s.problem_slug, s.platform,
                       s.submission_date, s.points_awarded, p.difficulty
                FROM Submissions s
-               JOIN Problems p ON s.problem_slug = p.problem_slug
+               JOIN Problems p ON s.problem_slug = p.problem_slug AND s.platform = p.platform
                WHERE s.discord_id = ?
                ORDER BY s.submission_date DESC
                LIMIT ?""",
@@ -309,9 +341,10 @@ class DatabaseManager:
                     "submission_id": row[0],
                     "discord_id": row[1],
                     "problem_slug": row[2],
-                    "submission_date": row[3],
-                    "points_awarded": row[4],
-                    "difficulty": row[5]
+                    "platform": row[3],
+                    "submission_date": row[4],
+                    "points_awarded": row[5],
+                    "difficulty": row[6]
                 }
                 for row in rows
             ]
@@ -319,22 +352,24 @@ class DatabaseManager:
     async def check_duplicate_submission(
         self, 
         discord_id: int, 
-        problem_slug: str
+        problem_slug: str,
+        platform: str = "LeetCode"
     ) -> bool:
         """
-        Check if user has already submitted this problem
+        Check if user has already submitted this problem on this platform
         
         Args:
             discord_id: Discord user ID
-            problem_slug: LeetCode problem slug
+            problem_slug: Problem slug
+            platform: Platform name
             
         Returns:
             True if submission exists, False otherwise
         """
         async with self.db.execute(
             """SELECT COUNT(*) FROM Submissions 
-               WHERE discord_id = ? AND problem_slug = ?""",
-            (discord_id, problem_slug)
+               WHERE discord_id = ? AND problem_slug = ? AND platform = ?""",
+            (discord_id, problem_slug, platform)
         ) as cursor:
             row = await cursor.fetchone()
             return row[0] > 0
@@ -371,28 +406,44 @@ class DatabaseManager:
 
     # ============ POTD Specific Methods ============
     
-    async def is_problem_potd(self, problem_slug: str, date_str: str) -> bool:
+    async def is_problem_potd(self, problem_slug: str, platform: str, date_str: str) -> bool:
         """
-        Check if a problem is assigned as POTD for a specific date.
+        Check if a problem is assigned as POTD for a specific platform and date.
+        
+        Args:
+            problem_slug: Problem slug
+            platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
+            date_str: Date string in YYYY-MM-DD format
+            
+        Returns:
+            True if problem is POTD for this platform on this date, False otherwise
         """
         async with self.db.execute(
-            "SELECT 1 FROM Problems WHERE problem_slug = ? AND date_posted = ?",
-            (problem_slug, date_str)
+            "SELECT 1 FROM Problems WHERE problem_slug = ? AND platform = ? AND date_posted = ?",
+            (problem_slug, platform, date_str)
         ) as cursor:
             return await cursor.fetchone() is not None
 
-    async def get_user_potd_count(self, discord_id: int, date_str: str) -> int:
+    async def get_user_potd_count(self, discord_id: int, platform: str, date_str: str) -> int:
         """
-        Count how many POTD problems a user has solved for a specific date.
+        Count how many POTD problems a user has solved for a specific platform and date.
+        
+        Args:
+            discord_id: Discord user ID
+            platform: Platform name
+            date_str: Date string in YYYY-MM-DD format
+            
+        Returns:
+            Count of POTD problems solved
         """
-        # Join Submissions with Problems to find matches for the specific date
         query = """
         SELECT COUNT(DISTINCT s.problem_slug)
         FROM Submissions s
-        JOIN Problems p ON s.problem_slug = p.problem_slug
+        JOIN Problems p ON s.problem_slug = p.problem_slug AND s.platform = p.platform
         WHERE s.discord_id = ? 
+          AND s.platform = ?
           AND p.date_posted = ?
         """
-        async with self.db.execute(query, (discord_id, date_str)) as cursor:
+        async with self.db.execute(query, (discord_id, platform, date_str)) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0

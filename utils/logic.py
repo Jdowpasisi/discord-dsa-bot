@@ -2,7 +2,7 @@
 Core Business Logic for LeetCode Discord Bot
 Handles scoring, validation, streaks, and problem name normalization
 """
-
+from utils.codeforces_api import get_codeforces_api
 from datetime import datetime, timedelta
 from typing import Tuple, Optional, Dict, Any
 from enum import Enum
@@ -25,12 +25,12 @@ class Difficulty(Enum):
     HARD = "Hard"
 
 DIFFICULTY_POINTS = {
-    "Easy": 10,
-    "Medium": 20,
-    "Hard": 40,
-    "1st Year": 10, 
-    "2nd Year": 20,
-    "3rd Year": 40
+    "Easy": 5,
+    "Medium": 10,
+    "Hard": 15,
+    "1st Year": 5, 
+    "2nd Year": 10,
+    "3rd Year": 15
 }
 
 
@@ -65,47 +65,119 @@ async def validate_submission(
     user_id: int,
     raw_problem_name: str,
     difficulty: Optional[str] = None,
+    platform: str = "LeetCode",
     current_date: Optional[datetime] = None
 ) -> Tuple[SubmissionStatus, str, Optional[Dict[str, Any]]]:
 
     if current_date is None: current_date = datetime.now()
-    problem_slug = normalize_problem_name(raw_problem_name)
+    
+    # Normalize input based on platform expectations
+    # LeetCode/GFG use slugs (lowercase, hyphens)
+    # Codeforces uses Contest+Index (e.g. 1872A), logic handles parsing later
+    if platform != "Codeforces":
+        problem_id = normalize_problem_name(raw_problem_name)
+    else:
+        problem_id = raw_problem_name.upper().strip() # Keep CF IDs uppercase (e.g. 1872A)
 
+    # 1. Get User Profile
     user_profile = await db_manager.get_user(user_id)
-    if not user_profile or not user_profile.get("leetcode_username"):
-        return (SubmissionStatus.NOT_LINKED, "⚠️ Link your account with `/setup` first.", None)
+    if not user_profile:
+        return (SubmissionStatus.NOT_LINKED, "⚠️ User not found. Run `/setup` first.", None)
 
-    leetcode_username = user_profile["leetcode_username"]
-    api = get_leetcode_api()
+    submission_data = {}
 
-    # 1. Metadata Check
-    problem_data = await api.get_problem_metadata(problem_slug)
-    if not problem_data:
-        return (SubmissionStatus.INVALID, f"❌ Problem `{problem_slug}` not found.", None)
+    # ==========================
+    # Platform: LeetCode
+    # ==========================
+    if platform == "LeetCode":
+        if not user_profile.get("leetcode_username"):
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link LeetCode first: `/setup`", None)
+        
+        leetcode_username = user_profile["leetcode_username"]
+        api = get_leetcode_api()
 
-    # 2. Verification Check (24h)
-    verified, error = await api.verify_recent_submission(leetcode_username, problem_slug, timeframe_minutes=1440)
-    if not verified:
-        return (SubmissionStatus.INVALID, f"❌ Verification failed: {error}", None)
+        # Fetch Metadata
+        problem_data = await api.get_problem_metadata(problem_id)
+        if not problem_data:
+            return (SubmissionStatus.INVALID, f"❌ Problem `{problem_id}` not found on LeetCode.", None)
 
-    # 3. Duplicate Check
-    if await db_manager.check_duplicate_submission(user_id, problem_slug):
-        return (SubmissionStatus.DUPLICATE, f"Already submitted `{problem_data.title}`.", None)
+        # Verify Submission (24h window)
+        verified, error = await api.verify_recent_submission(leetcode_username, problem_id, timeframe_minutes=1440)
+        if not verified:
+            return (SubmissionStatus.INVALID, f"❌ Verification failed: {error}", None)
 
-    points = calculate_points(problem_data.difficulty)
+        # ✅ FIX: Use title_slug consistently as the problem identifier
+        submission_data = {
+            "title": problem_data.title,
+            "difficulty": problem_data.difficulty,
+            "url": f"https://leetcode.com/problems/{problem_data.title_slug}/",
+            "slug": problem_data.title_slug  # ← CHANGED: Use slug instead of question_id
+        }
+
+    # ==========================
+    # Platform: Codeforces
+    # ==========================
+    elif platform == "Codeforces":
+        if not user_profile.get("codeforces_handle"):
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link Codeforces first: `/link codeforces <handle>`", None)
+            
+        cf_api = get_codeforces_api()
+        verified, msg, meta = await cf_api.verify_submission(user_profile["codeforces_handle"], problem_id)
+        
+        if not verified:
+            return (SubmissionStatus.INVALID, f"❌ {msg}", None)
+            
+        submission_data = {
+            "title": meta["title"],
+            "difficulty": meta["difficulty"],
+            "url": meta["url"],
+            "slug": problem_id  # ← CHANGED: Use consistent key name
+        }
+
+    # ==========================
+    # Platform: GeeksforGeeks
+    # ==========================
+    elif platform == "GeeksforGeeks":
+        if not user_profile.get("gfg_handle"):
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link GFG first: `/link gfg <profile_url>`", None)
+            
+        # Trust-Based Validation
+        submission_data = {
+            "title": raw_problem_name,
+            "difficulty": "Medium",
+            "url": user_profile.get("gfg_handle"),
+            "slug": problem_id  # ← CHANGED: Use consistent key name
+        }
+
+    else:
+        return (SubmissionStatus.INVALID, "❌ Unknown Platform selected.", None)
+
+    # ==========================
+    # Common Logic (Duplicate Check & Points)
+    # ==========================
+    
+    # ✅ FIX: Use consistent slug key
+    db_slug = submission_data["slug"]
+
+    # Check for duplicates in DB
+    if await db_manager.check_duplicate_submission(user_id, db_slug, platform):
+        return (SubmissionStatus.DUPLICATE, f"Already submitted `{submission_data['title']}`.", None)
+
+    # Calculate Points
+    points = calculate_points(submission_data["difficulty"])
 
     return (
         SubmissionStatus.VALID,
         "✅ Verified!",
         {
-            "problem_slug": problem_slug,
-            "title": problem_data.title,
-            "difficulty": problem_data.difficulty,
+            "problem_slug": db_slug,  # ← This is now consistently the slug
+            "title": submission_data["title"],
+            "difficulty": submission_data["difficulty"],
             "points": points,
-            "question_id": problem_data.question_id
+            "platform": platform,
+            "url": submission_data["url"]
         }
     )
-
 
 # ==========================
 # Streak Logic (FIXED)

@@ -15,8 +15,8 @@ class HelpCog(commands.Cog):
         self.bot = bot
         
     @app_commands.command(
-        name="bot_info",
-        description="Display all available bot commands"
+        name="help",
+        description="Display all available bot commands and features"
     )
     async def help_command(self, interaction: discord.Interaction):
         """
@@ -26,13 +26,30 @@ class HelpCog(commands.Cog):
             interaction: Discord interaction
         """
         embed = discord.Embed(
-            title="🤖 LeetCode Bot - Command Help",
-            description="Here are all the available commands for tracking your LeetCode progress!",
+            title="🤖 LeetCode DSA Bot - Command Help",
+            description="Complete guide to all available commands for tracking your coding progress!",
             color=config.COLOR_PRIMARY
         )
         
         # Add bot information
         embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
+        
+        # =============== USER PROFILE ===============
+        embed.add_field(
+            name="👤 `/setup`",
+            value=(
+                "**Configure your profile**\n"
+                "```\n"
+                "/setup year:2 leetcode_username:john_doe\n"
+                "```\n"
+                "• **Parameters:**\n"
+                "  - `year`: Your year level (1, 2, 3, 4, or General)\n"
+                "  - `leetcode_username`: Your LeetCode username\n"
+                "• **Why:** Personalize your profile and track by year\n"
+                "• **Note:** Can be run multiple times to update\n"
+            ),
+            inline=False
+        )
         
         # =============== SUBMISSION COMMANDS ===============
         embed.add_field(
@@ -47,9 +64,10 @@ class HelpCog(commands.Cog):
                 "  - `problem_name`: Problem title or slug\n"
                 "• **Difficulty:** Auto-detected from LeetCode API\n"
                 "• **Points:** Easy=10, Medium=20, Hard=40\n"
+                "• **POTD Bonus:** Problem of the Day = 15 pts + bonuses\n"
                 "• **Channel:** #dsa or #potd only\n"
                 "• **Cooldown:** 30 seconds per user\n"
-                "• **Features:** Real-time validation, streak tracking\n"
+                "• **Features:** Real-time validation, streak tracking, duplicate prevention\n"
             ),
             inline=False
         )
@@ -69,6 +87,8 @@ class HelpCog(commands.Cog):
                 "  - 🔥 Daily Streak\n"
                 "  - ⚡ Weekly Streak\n"
                 "  - 📅 Last Submission\n"
+                "  - 👤 LeetCode Username (if set)\n"
+                "  - 📚 Year Level (if set)\n"
                 "• **Optional:** View another user's stats\n"
             ),
             inline=False
@@ -91,6 +111,17 @@ class HelpCog(commands.Cog):
                 "  - Period-specific points\n"
                 "  - Total submission count\n"
                 "  - Inactive members count\n"
+            ),
+            inline=False
+        )
+        
+        # =============== PROBLEM COMMANDS ===============
+        embed.add_field(
+            name="📚 Problem Commands",
+            value=(
+                "**`/daily`** - View today's Problem of the Day\n"
+                "**`/problem <name>`** - Get details about a specific problem\n"
+                "• Shows difficulty, topic, and submission status\n"
             ),
             inline=False
         )
@@ -126,10 +157,11 @@ class HelpCog(commands.Cog):
                 "• Easy: 10 points\n"
                 "• Medium: 20 points\n"
                 "• Hard: 40 points\n"
+                "• 🏆 **POTD Bonus:** 15 points (fixed, plus bonuses)\n"
                 "\n"
-                "**Streaks:**\n"
-                "• 🔥 **Daily Streak:** Submit every day\n"
-                "• ⚡ **Weekly Streak:** Submit every week\n"
+                "**Streak Bonuses:**\n"
+                "• 🔥 **Daily Streak:** +5 points (submit every day)\n"
+                "• ⚡ **Weekly Streak:** +20 points (submit every week)\n"
                 "• Breaks if you miss a day/week\n"
                 "• Displayed in `/stats`\n"
             ),
@@ -141,15 +173,15 @@ class HelpCog(commands.Cog):
             name="📋 Rules",
             value=(
                 "**Submission Rules:**\n"
-                "• One submission per problem\n"
+                "• One submission per problem (no duplicates)\n"
                 "• Difficulty auto-detected (no need to specify!)\n"
                 "• 30-second cooldown between submissions\n"
                 "• Only in #dsa or #potd channels\n"
+                "• Real-time LeetCode API validation\n"
                 "\n"
                 "**Problem Format:**\n"
                 "• Use problem slug: `two-sum`\n"
                 "• Or title with spaces: `Two Sum`\n"
-                "• Case insensitive\n"
                 "• Case-insensitive\n"
             ),
             inline=True
@@ -157,7 +189,7 @@ class HelpCog(commands.Cog):
         
         # =============== FOOTER ===============
         embed.set_footer(
-            text="💡 Tip: Problems are posted daily at midnight | Leaderboard updates Sunday nights",
+            text="💡 Tips: /setup to configure profile | /daily for today's POTD | Leaderboard updates Sunday nights",
             icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
         )
         

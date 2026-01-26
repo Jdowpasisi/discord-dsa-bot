@@ -18,9 +18,9 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "data/leetcode_bot.db")
 
 # Points System (No negative points ever)
 POINTS = {
-    "Easy": 10,
-    "Medium": 20,
-    "Hard": 40
+    "Easy": 5,
+    "Medium": 10,
+    "Hard": 15
 }
 
 # Streak Bonuses

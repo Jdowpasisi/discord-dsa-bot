@@ -3,6 +3,7 @@ SchedulerCog: Queue-Based System
 --------------------------------
 - Reads from a strict ordered queue in problem_bank.json.
 - Runs at 12:00 AM IST (UTC+5:30).
+- PLATFORM-AWARE: Problems are now stored with platform information
 """
 
 import discord
@@ -33,7 +34,7 @@ class SchedulerCog(commands.Cog):
         
         # Start the midnight job
         self.daily_problem_post.start()
-        logger.info("SchedulerCog (Queue Mode) initialized")
+        logger.info("SchedulerCog (Queue Mode - Platform Aware) initialized")
     
     def cog_unload(self):
         self.daily_problem_post.cancel()
@@ -87,8 +88,11 @@ class SchedulerCog(commands.Cog):
         # 1. Insert into Database
         try:
             for p in problems:
+                # ✅ FIXED: Added platform parameter (defaults to LeetCode for backward compatibility)
+                platform = p.get("platform", "LeetCode")
                 await self.db_manager.create_problem(
                     problem_slug=p["slug"],
+                    platform=platform,  # ← ADDED PLATFORM
                     problem_title=p["title"],
                     difficulty=p["difficulty"], 
                     topic="Daily Queue",
@@ -97,7 +101,6 @@ class SchedulerCog(commands.Cog):
         except Exception as e:
             logger.error(f"DB Insert failed: {e}")
             # We continue even if DB fails, to at least try posting to Discord
-            # (Though in practice, POTD logic relies on DB, so users might check logs)
 
         # 2. Create Embed
         embed = discord.Embed(
@@ -111,9 +114,10 @@ class SchedulerCog(commands.Cog):
         problems.sort(key=lambda x: order_map.get(x["difficulty"], 99))
 
         for p in problems:
+            platform = p.get("platform", "LeetCode")
             embed.add_field(
-                name=f"🔹 {p['difficulty']} Problem",
-                value=f"**{p['title']}**\n[Solve on LeetCode]({p['url']})",
+                name=f"🔹 {p['difficulty']} Problem ({platform})",
+                value=f"**{p['title']}**\n[Solve on {platform}]({p['url']})",
                 inline=False
             )
             
@@ -181,4 +185,4 @@ class SchedulerCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(SchedulerCog(bot))
-    logger.info("SchedulerCog (Queue) loaded")
+    logger.info("SchedulerCog (Queue - Platform Aware) loaded")
