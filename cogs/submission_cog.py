@@ -115,17 +115,26 @@ class SubmissionCog(commands.Cog):
             real_title = problem_data["title"]
             problem_slug = problem_data["problem_slug"]
 
-            # Force backend difficulty for GFG
+            # Force backend difficulty for GFG - treat all as Easy (10 points)
             if selected_platform == "GeeksforGeeks":
-                real_difficulty = "Medium"
+                real_difficulty = "Easy"
 
             # ✅ CRITICAL FIX: Check if problem exists in DB first, then check POTD status
             existing_problem = await self.bot.db.get_problem(problem_slug, selected_platform)
             
-            # If problem exists and has a date_posted matching today, it's POTD
             is_potd = False
-            if existing_problem and existing_problem.get("date_posted") == today_str:
-                is_potd = True
+            
+            if existing_problem:
+                # Check 1: Is the 'is_potd' flag explicitly set to 1?
+                if existing_problem.get("is_potd") == 1:
+                    is_potd = True
+                
+                # Check 2 (Fallback): Does the date match today?
+                # We check BOTH 'potd_date' (new) and 'date_posted' (old) just in case
+                elif existing_problem.get("potd_date") == today_str:
+                    is_potd = True
+                elif existing_problem.get("date_posted") == today_str:
+                    is_potd = True
             
             # If problem doesn't exist, create it as NON-POTD (date_posted will be NULL)
             if not existing_problem:
@@ -134,6 +143,7 @@ class SubmissionCog(commands.Cog):
                     platform=selected_platform,
                     problem_title=real_title,
                     difficulty=real_difficulty,
+                    academic_year="2",  # Default to year 2 for user-submitted problems
                     topic="General",
                     date_posted=None  # NULL for non-POTD problems
                 )

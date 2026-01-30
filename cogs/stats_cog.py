@@ -426,62 +426,6 @@ class StatsCog(commands.Cog):
                 )
             )
     
-    @app_commands.command(
-        name="leaderboard",
-        description="View the leaderboard for weekly or monthly submissions"
-    )
-    @app_commands.describe(
-        period="Time period for leaderboard (weekly by default)"
-    )
-    async def leaderboard(
-        self,
-        interaction: discord.Interaction,
-        period: Literal["weekly", "monthly"] = "weekly"
-    ):
-        """
-        Display leaderboard for specified period.
-        
-        Args:
-            interaction: Discord interaction
-            period: "weekly" (Monday-Sunday) or "monthly" (1st-last day)
-        """
-        await interaction.response.defer()
-        
-        try:
-            # Get leaderboard data
-            if period == "weekly":
-                leaderboard_data = await self._get_weekly_leaderboard()
-            else:
-                leaderboard_data = await self._get_monthly_leaderboard()
-            
-            if not leaderboard_data:
-                await interaction.followup.send(
-                    embed=discord.Embed(
-                        title="📊 Leaderboard",
-                        description="No users found. Start submitting with `/submit`!",
-                        color=config.COLOR_WARNING
-                    )
-                )
-                return
-            
-            # Create and send embed
-            embed = self._create_leaderboard_embed(
-                leaderboard_data,
-                period,
-                interaction.guild
-            )
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            logger.error(f"Error in leaderboard command: {e}", exc_info=True)
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description="Failed to retrieve leaderboard. Please try again later.",
-                    color=config.COLOR_ERROR
-                )
-            )
-    
     # ==================== Automated Tasks ====================
     
     @tasks.loop(time=time(hour=23, minute=59))  # Sunday 11:59 PM

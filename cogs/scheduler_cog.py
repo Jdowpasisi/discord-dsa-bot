@@ -1,22 +1,20 @@
 """
-SchedulerCog: Queue-Based System
---------------------------------
-- Reads from a strict ordered queue in problem_bank.json.
-- Runs at 12:00 AM IST (UTC+5:30).
-- PLATFORM-AWARE: Problems are now stored with platform information
+SchedulerCog: Database-Driven Queue
+-----------------------------------
+- Runs at 12:00 AM IST.
+- Pulls the oldest unused problems (Year 1, 2, 3) from the Database.
+- Sets them as POTD.
+- Includes Codeforces URL Fixer.
 """
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta, timezone
-import json
 import logging
-from pathlib import Path
-from typing import List, Dict, Optional
+import re # Needed for Codeforces URL fixing
 
 from database.manager import DatabaseManager
-from utils.logic import normalize_problem_name
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +23,6 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 class SchedulerCog(commands.Cog):
     
-    QUEUE_PATH = Path("data/problem_bank.json")
     CHANNEL_NAME = "potd"
     
     def __init__(self, bot: commands.Bot):
@@ -34,148 +31,126 @@ class SchedulerCog(commands.Cog):
         
         # Start the midnight job
         self.daily_problem_post.start()
-        logger.info("SchedulerCog (Queue Mode - Platform Aware) initialized")
+        logger.info("SchedulerCog (DB Queue Mode) initialized")
     
     def cog_unload(self):
         self.daily_problem_post.cancel()
 
-    # ==================== Queue Management ====================
+    # ==================== Helper Methods ====================
 
-    def _load_queue(self) -> List[List[Dict]]:
-        """Load the list of daily sets."""
-        try:
-            with open(self.QUEUE_PATH, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return data.get("queue", [])
-        except Exception as e:
-            logger.error(f"Error loading queue: {e}")
-            return []
-
-    def _save_queue(self, queue: List[List[Dict]]):
-        """Save the modified queue back to JSON."""
-        try:
-            with open(self.QUEUE_PATH, 'w', encoding='utf-8') as f:
-                json.dump({"queue": queue}, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving queue: {e}")
-
-    def _get_next_batch(self, consume: bool = False) -> Optional[List[Dict]]:
+    def _generate_problem_url(self, platform: str, slug: str) -> str:
         """
-        Get the next set of problems.
-        Args:
-            consume: If True, removes the set from the JSON file.
+        Helper to generate correct URLs based on platform.
+        Fixes the Codeforces '1872A' -> 'contest/1872/problem/A' issue.
         """
-        queue = self._load_queue()
+        if platform == "LeetCode":
+            return f"https://leetcode.com/problems/{slug}/"
         
-        if not queue:
-            return None
-        
-        next_set = queue[0]
-        
-        if consume:
-            queue.pop(0)
-            self._save_queue(queue)
-            logger.info(f"Consumed 1 daily set. Remaining: {len(queue)}")
-            
-        return next_set
+        elif platform == "Codeforces":
+            # Regex to split Number and Letter (e.g. 1872A -> 1872, A)
+            match = re.match(r"^(\d+)([A-Z]\d?)$", slug.upper())
+            if match:
+                return f"https://codeforces.com/contest/{match.group(1)}/problem/{match.group(2)}"
+            else:
+                return f"https://codeforces.com/problemset/problem/{slug}"
+                
+        else: # GeeksforGeeks
+            return f"https://www.geeksforgeeks.org/problems/{slug}/"
 
-    # ==================== Database & Posting ====================
+    # ==================== Core Logic ====================
 
-    async def _process_batch(self, problems: List[Dict], note: str = ""):
-        """Insert to DB and Post to Discord"""
-        today = datetime.now() # Stores local server time in DB, which is fine
+    async def _post_daily_batch(self, batch_data: dict, note: str = ""):
+        """
+        1. Mark problems as POTD in DB.
+        2. Post Embed to Discord.
+        """
+        today_str = datetime.now().date().isoformat()
         
-        # 1. Insert into Database
-        try:
-            for p in problems:
-                # ✅ FIXED: Added platform parameter (defaults to LeetCode for backward compatibility)
-                platform = p.get("platform", "LeetCode")
-                await self.db_manager.create_problem(
-                    problem_slug=p["slug"],
-                    platform=platform,  # ← ADDED PLATFORM
-                    problem_title=p["title"],
-                    difficulty=p["difficulty"], 
-                    topic="Daily Queue",
-                    date_posted=today.date().isoformat()
-                )
-        except Exception as e:
-            logger.error(f"DB Insert failed: {e}")
-            # We continue even if DB fails, to at least try posting to Discord
+        # Check if we have a full set (1, 2, 3)
+        if len(batch_data) < 3:
+            logger.warning("Batch incomplete. Missing some years.")
+
+        # 1. Update DB (Set as POTD)
+        if not note.startswith("(Preview"): # Only update DB if not a preview
+            for year, prob in batch_data.items():
+                await self.db_manager.set_potd(prob['slug'], prob['platform'], today_str)
+            logger.info(f"Set POTD for {today_str}")
 
         # 2. Create Embed
         embed = discord.Embed(
             title=f"📅 Problem of the Day {note}",
-            description="**Topic:** Daily Mix\n**Deadline:** 11:59 PM Today",
+            description=f"**Date:** {datetime.now().strftime('%B %d, %Y')}\n**Deadline:** 11:59 PM Today",
             color=discord.Color.blue(),
             timestamp=datetime.now()
         )
-        
-        order_map = {"1st Year": 1, "2nd Year": 2, "3rd Year": 3}
-        problems.sort(key=lambda x: order_map.get(x["difficulty"], 99))
 
-        for p in problems:
-            platform = p.get("platform", "LeetCode")
+        # Sort 1 -> 2 -> 3
+        sorted_years = sorted(batch_data.keys())
+        
+        for year in sorted_years:
+            p = batch_data[year]
+            
+            # REGENERATE URL to ensure it is correct (fixes CF links)
+            safe_url = self._generate_problem_url(p['platform'], p['slug'])
+            
+            # Display both difficulty and year
+            difficulty = p.get('difficulty', 'Medium')
             embed.add_field(
-                name=f"🔹 {p['difficulty']} Problem ({platform})",
-                value=f"**{p['title']}**\n[Solve on {platform}]({p['url']})",
+                name=f"🔹 Year {year} ({difficulty}) - {p['platform']}",
+                value=f"**{p['title']}**\n[Solve Here]({safe_url})",
                 inline=False
             )
-            
-        embed.set_footer(text=f"Queue Remaining: {len(self._load_queue())}")
+        
+        # Add Queue Stats to Footer
+        q_status = await self.db_manager.get_queue_status()
+        footer_text = f"Queue: Y1:{q_status.get('1',0)} | Y2:{q_status.get('2',0)} | Y3:{q_status.get('3',0)}"
+        embed.set_footer(text=footer_text)
 
         # 3. Post
         channel = discord.utils.get(self.bot.get_all_channels(), name=self.CHANNEL_NAME)
         if channel:
             await channel.send(embed=embed)
-            logger.info(f"Posted daily batch to #{self.CHANNEL_NAME}")
         else:
             logger.error(f"Channel #{self.CHANNEL_NAME} not found.")
 
     # ==================== Admin Commands ====================
 
-    @app_commands.command(name="force_potd", description="Admin: Post next POTD but KEEP it in queue (Preview)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def force_potd(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+    # @app_commands.command(name="force_potd", description="Admin: Trigger daily job immediately (Consumes Queue)")
+    # @app_commands.checks.has_permissions(administrator=True)
+    # async def force_potd(self, interaction: discord.Interaction):
+    #     await interaction.response.defer()
         
-        batch = self._get_next_batch(consume=False)
+    #     # Fetch next available batch
+    #     batch = await self.db_manager.get_next_queue_batch()
         
-        if not batch:
-            await interaction.followup.send("⚠️ The Queue is empty! Use `python add_problems.py` to add more.")
-            return
+    #     if not batch:
+    #         await interaction.followup.send("⚠️ Queue is empty! No unused problems found in DB.")
+    #         return
 
-        await self._process_batch(batch, note="(Preview / Force)")
-        await interaction.followup.send("✅ Posted top of queue (Queue NOT consumed).")
+    #     await self._post_daily_batch(batch)
+    #     await interaction.followup.send("✅ Daily job triggered successfully.")
 
-    @app_commands.command(name="force_queue", description="Admin: Trigger daily job immediately (Post + Remove from Queue)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def force_queue(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        
-        batch = self._get_next_batch(consume=True)
-        
-        if not batch:
-            await interaction.followup.send("⚠️ The Queue is empty!")
-            return
-
-        await self._process_batch(batch)
-        await interaction.followup.send("✅ Triggered Daily Job (Queue consumed).")
+    # # Note: 'remove_potd' removed from here because it exists in cogs/problems.py
 
     # ==================== Scheduled Task ====================
 
-    # CRITICAL CHANGE: Added tzinfo=IST to run at 12:00 AM Indian Standard Time
     @tasks.loop(time=time(hour=0, minute=0, tzinfo=IST))
     async def daily_problem_post(self):
         """Runs automatically at midnight IST."""
-        logger.info("Running daily queue task (Scheduled)...")
+        logger.info("Running daily DB queue task...")
         
         try:
-            batch = self._get_next_batch(consume=True)
+            # 1. Check if POTD already set for today?
+            # For now, we assume if the task runs, we post.
+            
+            # 2. Fetch and Post
+            batch = await self.db_manager.get_next_queue_batch()
             
             if batch:
-                await self._process_batch(batch)
+                await self._post_daily_batch(batch)
             else:
                 logger.error("Daily task failed: Queue is empty!")
+                
         except Exception as e:
             logger.error(f"Critical error in daily task: {e}", exc_info=True)
 
@@ -185,4 +160,4 @@ class SchedulerCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(SchedulerCog(bot))
-    logger.info("SchedulerCog (Queue - Platform Aware) loaded")
+    logger.info("SchedulerCog (DB Queue) loaded")

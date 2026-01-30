@@ -194,16 +194,15 @@ class DatabaseManager:
     async def get_problem(self, problem_slug: str, platform: str = "LeetCode") -> Optional[dict]:
         """
         Get problem information by slug and platform
-        
-        Args:
-            problem_slug: Problem slug (e.g., "two-sum")
-            platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
-            
-        Returns:
-            Dictionary with problem data or None if not found
         """
+        # Ensure we select is_potd and potd_date
         async with self.db.execute(
-            "SELECT * FROM Problems WHERE problem_slug = ? AND platform = ?",
+            """
+            SELECT problem_slug, platform, problem_title, difficulty, academic_year, topic, 
+                   date_posted, is_potd, potd_date
+            FROM Problems 
+            WHERE problem_slug = ? AND platform = ?
+            """,
             (problem_slug, platform)
         ) as cursor:
             row = await cursor.fetchone()
@@ -213,17 +212,21 @@ class DatabaseManager:
                     "platform": row[1],
                     "problem_title": row[2],
                     "difficulty": row[3],
-                    "topic": row[4],
-                    "date_posted": row[5]
+                    "academic_year": row[4],
+                    "topic": row[5],
+                    "date_posted": row[6], # Deprecated but kept
+                    "is_potd": row[7],     # CRITICAL: This was missing
+                    "potd_date": row[8]    # CRITICAL: This was missing
                 }
         return None
-
+    
     async def create_problem(
         self, 
         problem_slug: str,
         platform: str = "LeetCode",
         problem_title: str = None,
-        difficulty: str = None, 
+        difficulty: str = None,
+        academic_year: str = None,
         topic: str = None, 
         date_posted: str = None
     ) -> None:
@@ -234,10 +237,16 @@ class DatabaseManager:
             problem_slug: Problem slug
             platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
             problem_title: Problem title
-            difficulty: Problem difficulty
+            difficulty: Problem difficulty (Easy, Medium, Hard)
+            academic_year: Academic year level ("1", "2", "3")
             topic: Problem topic/category
             date_posted: Date when problem was posted as POTD (YYYY-MM-DD)
         """
+        # Backward compatibility: If difficulty is "1", "2", or "3", treat as academic_year
+        if difficulty in ["1", "2", "3"] and not academic_year:
+            academic_year = difficulty
+            difficulty = "Medium"  # Default difficulty
+        
         # Check if problem already exists
         existing = await self.get_problem(problem_slug, platform)
         
@@ -252,6 +261,9 @@ class DatabaseManager:
             if difficulty:
                 updates.append("difficulty = ?")
                 params.append(difficulty)
+            if academic_year:
+                updates.append("academic_year = ?")
+                params.append(academic_year)
             if topic:
                 updates.append("topic = ?")
                 params.append(topic)
@@ -268,13 +280,14 @@ class DatabaseManager:
             # Insert new problem - use NULL explicitly for date_posted if None
             await self.db.execute(
                 """INSERT INTO Problems 
-                (problem_slug, platform, problem_title, difficulty, topic, date_posted) 
-                VALUES (?, ?, ?, ?, ?, ?)""",
+                (problem_slug, platform, problem_title, difficulty, academic_year, topic, date_posted) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     problem_slug,
                     platform,
                     problem_title or "Unknown Title", 
-                    difficulty or "Medium", 
+                    difficulty or "Medium",
+                    academic_year or "2",  # Default to year 2 if not specified
                     topic or "General", 
                     date_posted  # This will be None for non-POTD, which SQLite accepts as NULL
                 )
@@ -376,54 +389,270 @@ class DatabaseManager:
             
     # ============ Leaderboard Methods ============
     
-    async def get_leaderboard(self, limit: int = 10) -> list[dict]:
+    async def get_leaderboard(self, limit: int = 10, year: str = None, period: str = None, start_date: str = None, end_date: str = None) -> list[dict]:
         """
-        Get top users by total points
+        Get top users by points, with optional filters for year and time period
         
         Args:
             limit: Number of top users to return
+            year: Optional student year filter ("1", "2", "3", "4")
+            period: Optional period filter ("weekly", "monthly", "all-time")
+            start_date: Start date for period filter (ISO format)
+            end_date: End date for period filter (ISO format)
             
         Returns:
             List of user dictionaries sorted by points
         """
-        async with self.db.execute(
-            """SELECT discord_id, total_points, daily_streak, weekly_streak
-               FROM Users
-               ORDER BY total_points DESC
-               LIMIT ?""",
-            (limit,)
-        ) as cursor:
+        if period and period != "all-time":
+            # Period-based leaderboard: JOIN with Submissions and sum points_awarded
+            query = """SELECT 
+                           u.discord_id, 
+                           COALESCE(SUM(s.points_awarded), 0) as total_points,
+                           u.daily_streak,
+                           u.weekly_streak,
+                           u.student_year
+                       FROM Users u
+                       LEFT JOIN Submissions s ON u.discord_id = s.discord_id"""
+            
+            conditions = []
+            params = []
+            
+            if start_date and end_date:
+                conditions.append("s.submission_date BETWEEN ? AND ?")
+                params.extend([start_date, end_date])
+            
+            if year:
+                conditions.append("u.student_year = ?")
+                params.append(year)
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            
+            query += " GROUP BY u.discord_id ORDER BY total_points DESC LIMIT ?"
+            params.append(limit)
+        else:
+            # All-time leaderboard: use total_points from Users table
+            if year:
+                query = """SELECT discord_id, total_points, daily_streak, weekly_streak, student_year
+                           FROM Users
+                           WHERE student_year = ?
+                           ORDER BY total_points DESC
+                           LIMIT ?"""
+                params = (year, limit)
+            else:
+                query = """SELECT discord_id, total_points, daily_streak, weekly_streak, student_year
+                           FROM Users
+                           ORDER BY total_points DESC
+                           LIMIT ?"""
+                params = (limit,)
+        
+        async with self.db.execute(query, params) as cursor:
             rows = await cursor.fetchall()
             return [
                 {
                     "discord_id": row[0],
                     "total_points": row[1],
                     "daily_streak": row[2],
-                    "weekly_streak": row[3]
+                    "weekly_streak": row[3],
+                    "student_year": row[4] if len(row) > 4 else None
                 }
                 for row in rows
             ]
 
     # ============ POTD Specific Methods ============
-    
-    async def is_problem_potd(self, problem_slug: str, platform: str, date_str: str) -> bool:
+
+    async def set_potd(self, problem_slug: str, platform: str, potd_date: str) -> None:
         """
-        Check if a problem is assigned as POTD for a specific platform and date.
+        Mark a problem as POTD for a specific date
         
         Args:
             problem_slug: Problem slug
-            platform: Platform name (LeetCode, Codeforces, GeeksforGeeks)
+            platform: Platform name
+            potd_date: Date string in YYYY-MM-DD format
+        """
+        await self.db.execute(
+            """UPDATE Problems 
+            SET is_potd = 1, potd_date = ? 
+            WHERE problem_slug = ? AND platform = ?""",
+            (potd_date, problem_slug, platform)
+        )
+        await self.db.commit()
+
+    async def unset_potd(self, problem_slug: str, platform: str) -> None:
+        """
+        Remove POTD status from a problem
+        
+        Args:
+            problem_slug: Problem slug
+            platform: Platform name
+        """
+        await self.db.execute(
+            """UPDATE Problems 
+            SET is_potd = 0, potd_date = NULL 
+            WHERE problem_slug = ? AND platform = ?""",
+            (problem_slug, platform)
+        )
+        await self.db.commit()
+
+    async def get_potd_for_date(self, potd_date: str, platform: str = None) -> list[dict]:
+        """
+        Get all POTD problems for a specific date
+        
+        Args:
+            potd_date: Date string in YYYY-MM-DD format
+            platform: Optional platform filter
+            
+        Returns:
+            List of problem dictionaries
+        """
+        if platform:
+            query = """SELECT problem_slug, platform, problem_title, difficulty, academic_year, topic
+                    FROM Problems 
+                    WHERE is_potd = 1 AND potd_date = ? AND platform = ?"""
+            params = (potd_date, platform)
+        else:
+            query = """SELECT problem_slug, platform, problem_title, difficulty, academic_year, topic
+                    FROM Problems 
+                    WHERE is_potd = 1 AND potd_date = ?"""
+            params = (potd_date,)
+        
+        async with self.db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "problem_slug": row[0],
+                    "platform": row[1],
+                    "problem_title": row[2],
+                    "difficulty": row[3],
+                    "academic_year": row[4],
+                    "topic": row[5]
+                }
+                for row in rows
+            ]
+
+    async def is_problem_potd(self, problem_slug: str, platform: str, date_str: str) -> bool:
+        """
+        Check if a problem is POTD for a specific date (UPDATED)
+        
+        Args:
+            problem_slug: Problem slug
+            platform: Platform name
             date_str: Date string in YYYY-MM-DD format
             
         Returns:
-            True if problem is POTD for this platform on this date, False otherwise
+            True if problem is POTD, False otherwise
         """
         async with self.db.execute(
-            "SELECT 1 FROM Problems WHERE problem_slug = ? AND platform = ? AND date_posted = ?",
+            """SELECT 1 FROM Problems 
+            WHERE problem_slug = ? AND platform = ? AND is_potd = 1 AND potd_date = ?""",
             (problem_slug, platform, date_str)
         ) as cursor:
             return await cursor.fetchone() is not None
 
+    async def create_problem(
+        self, 
+        problem_slug: str,
+        platform: str = "LeetCode",
+        problem_title: str = None,
+        difficulty: str = None,
+        academic_year: str = None,
+        topic: str = None, 
+        date_posted: str = None,
+        is_potd: int = 0,
+        potd_date: str = None
+    ) -> None:
+        """
+        Add or Update a problem in the database (UPDATED)
+        
+        Args:
+            problem_slug: Problem slug
+            platform: Platform name
+            problem_title: Problem title
+            difficulty: Problem difficulty (Easy, Medium, Hard)
+            academic_year: Academic year level ("1", "2", "3")
+            topic: Problem topic/category
+            date_posted: DEPRECATED - kept for backwards compatibility
+            is_potd: 1 if POTD, 0 otherwise
+            potd_date: Date when set as POTD (YYYY-MM-DD)
+        """
+        # Backward compatibility: If difficulty is "1", "2", or "3", treat as academic_year
+        if difficulty in ["1", "2", "3"] and not academic_year:
+            academic_year = difficulty
+            difficulty = "Medium"  # Default difficulty
+        
+        existing = await self.get_problem(problem_slug, platform)
+        
+        if existing:
+            # Update provided fields
+            updates = []
+            params = []
+            
+            if problem_title:
+                updates.append("problem_title = ?")
+                params.append(problem_title)
+            if difficulty:
+                updates.append("difficulty = ?")
+                params.append(difficulty)
+            if academic_year:
+                updates.append("academic_year = ?")
+                params.append(academic_year)
+            if topic:
+                updates.append("topic = ?")
+                params.append(topic)
+            if date_posted is not None:
+                updates.append("date_posted = ?")
+                params.append(date_posted)
+            if is_potd is not None:
+                updates.append("is_potd = ?")
+                params.append(is_potd)
+            if potd_date is not None:
+                updates.append("potd_date = ?")
+                params.append(potd_date)
+            
+            if updates:
+                params.extend([problem_slug, platform])
+                query = f"UPDATE Problems SET {', '.join(updates)} WHERE problem_slug = ? AND platform = ?"
+                await self.db.execute(query, tuple(params))
+                await self.db.commit()
+        else:
+            # Insert new problem
+            await self.db.execute(
+                """INSERT INTO Problems 
+                (problem_slug, platform, problem_title, difficulty, academic_year, topic, date_posted, is_potd, potd_date) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    problem_slug,
+                    platform,
+                    problem_title or "Unknown Title", 
+                    difficulty or "Medium",
+                    academic_year or "2",  # Default to year 2
+                    topic or "General", 
+                    date_posted,
+                    is_potd or 0,
+                    potd_date
+                )
+            )
+            await self.db.commit()
+
+    async def is_problem_potd(self, problem_slug: str, platform: str, date_str: str) -> bool:   
+        """Check if a problem is assigned as POTD"""
+        async with self.db.execute(
+            "SELECT 1 FROM Problems WHERE problem_slug = ? AND platform = ? AND date_posted = ?",
+            (problem_slug, platform, date_str)
+        ) as cursor:
+            # Fallback logic: check is_potd flag if date logic fails or vice versa
+            if await cursor.fetchone():
+                return True
+                
+        # Also check strict flag + date match
+        async with self.db.execute(
+            "SELECT 1 FROM Problems WHERE problem_slug = ? AND platform = ? AND is_potd = 1 AND potd_date = ?",
+            (problem_slug, platform, date_str)
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+        
+    
     async def get_user_potd_count(self, discord_id: int, platform: str, date_str: str) -> int:
         """
         Count how many POTD problems a user has solved for a specific platform and date.
@@ -447,3 +676,71 @@ class DatabaseManager:
         async with self.db.execute(query, (discord_id, platform, date_str)) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
+        # ============ Queue Management Methods (NEW) ============
+
+    async def get_next_queue_batch(self) -> dict:
+        """
+        Selects the oldest unused problem for Year 1, 2, and 3.
+        Returns a dict: {'1': prob_obj, '2': prob_obj, '3': prob_obj}
+        """
+        batch = {}
+        # Categories mapping
+        categories = ["1", "2", "3"]
+        
+        for year in categories:
+            # Select oldest problem (by implicit rowid) that hasn't been POTD yet
+            async with self.db.execute(
+                """
+                SELECT problem_slug, problem_title, difficulty, academic_year, platform 
+                FROM Problems 
+                WHERE academic_year = ? 
+                  AND (is_potd = 0 OR is_potd IS NULL)
+                  AND potd_date IS NULL
+                ORDER BY rowid ASC 
+                LIMIT 1
+                """,
+                (year,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    batch[year] = {
+                        "slug": row[0],
+                        "title": row[1],
+                        "difficulty": row[2],
+                        "academic_year": row[3],
+                        "platform": row[4],
+                        "url": self._generate_url(row[4], row[0])
+                    }
+        
+        return batch
+
+    async def get_queue_status(self) -> dict:
+        """Counts how many unused problems remain for each year."""
+        status = {}
+        for year in ["1", "2", "3"]:
+            async with self.db.execute(
+                """SELECT COUNT(*) FROM Problems 
+                   WHERE academic_year = ? AND potd_date IS NULL""",
+                (year,)
+            ) as cursor:
+                status[year] = (await cursor.fetchone())[0]
+        return status
+
+    async def get_queue_preview(self, limit: int = 5) -> list:
+        """Get a list of upcoming problems across all categories."""
+        async with self.db.execute(
+            """
+            SELECT problem_title, academic_year, platform 
+            FROM Problems 
+            WHERE potd_date IS NULL 
+            ORDER BY rowid ASC 
+            LIMIT ?
+            """,
+            (limit,)
+        ) as cursor:
+            return await cursor.fetchall()
+
+    def _generate_url(self, platform, slug):
+        if platform == "LeetCode": return f"https://leetcode.com/problems/{slug}/"
+        if platform == "Codeforces": return f"https://codeforces.com/problemset/problem/{slug}"
+        return f"https://www.geeksforgeeks.org/problems/{slug}/"

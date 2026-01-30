@@ -53,9 +53,8 @@ def add_problem():
     title = input("Title (e.g. Two Sum): ").strip()
     
     print("Difficulty: (1) Easy, (2) Medium, (3) Hard")
-    diff_map = {"1": "Easy", "2": "Medium", "3": "Hard"}
     diff_choice = input("Choice: ")
-    difficulty = diff_map.get(diff_choice, "Medium")
+    difficulty = diff_choice if diff_choice in ['Easy', 'Medium', 'Hard'] else 'Medium'
     
     url = f"https://leetcode.com/problems/{slug}/"
     print(f"URL generated: {url}")

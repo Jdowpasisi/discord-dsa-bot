@@ -20,9 +20,12 @@ CREATE TABLE IF NOT EXISTS Problems (
     problem_slug TEXT NOT NULL,
     platform TEXT NOT NULL DEFAULT "LeetCode",
     problem_title TEXT,
-    difficulty TEXT,
+    difficulty TEXT,  -- Actual problem difficulty: Easy, Medium, Hard
+    academic_year TEXT,  -- Academic year level: "1", "2", "3"
     topic TEXT NOT NULL,
-    date_posted TEXT,  -- ISO format: YYYY-MM-DD (NULL for non-POTD problems) - NULLABLE
+    date_posted TEXT,  -- DEPRECATED: Keep for backwards compatibility
+    is_potd INTEGER DEFAULT 0,  -- NEW: 1 if currently POTD, 0 otherwise
+    potd_date TEXT,  -- NEW: Date when set as POTD (YYYY-MM-DD)
     PRIMARY KEY (problem_slug, platform)
 );
 
@@ -45,6 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_submissions_problem_slug ON Submissions(problem_s
 CREATE INDEX IF NOT EXISTS idx_submissions_platform ON Submissions(platform);
 CREATE INDEX IF NOT EXISTS idx_submissions_date ON Submissions(submission_date);
 CREATE INDEX IF NOT EXISTS idx_problems_difficulty ON Problems(difficulty);
+CREATE INDEX IF NOT EXISTS idx_problems_academic_year ON Problems(academic_year);
 CREATE INDEX IF NOT EXISTS idx_problems_date_posted ON Problems(date_posted);
 CREATE INDEX IF NOT EXISTS idx_problems_platform ON Problems(platform);
 CREATE INDEX IF NOT EXISTS idx_problems_slug_platform ON Problems(problem_slug, platform);
+CREATE INDEX IF NOT EXISTS idx_problems_is_potd ON Problems(is_potd);
+CREATE INDEX IF NOT EXISTS idx_problems_potd_date ON Problems(potd_date);

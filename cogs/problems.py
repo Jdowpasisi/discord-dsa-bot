@@ -8,238 +8,193 @@ from discord.ext import commands
 from discord import app_commands
 from datetime import datetime
 import config
-from utils.logic import normalize_problem_name, validate_difficulty
-
+import json
+import re
+from utils.logic import normalize_problem_name
+from utils.leetcode_api import get_leetcode_api
+from utils.codeforces_api import get_codeforces_api
 
 class Problems(commands.Cog):
     """Commands for managing and viewing problems"""
     
     def __init__(self, bot):
         self.bot = bot
+
+    def _parse_gfg_data(self, url: str) -> dict:
+        """Parse GFG URL to extract slug and generate clean title"""
+        # Extract slug from URL
+        gfg_url_pattern = r"https?://(?:www\.)?geeksforgeeks\.org/problems/([^/]+)/?.*"
+        match = re.match(gfg_url_pattern, url)
         
-    @app_commands.command(name="addproblem", description="Add a new problem to the database (Admin only)")
-    @app_commands.describe(
-        problem_slug="Problem slug/ID",
-        platform="Platform",
-        difficulty="Problem difficulty",
-        topic="Problem topic/category"
-    )
-    @app_commands.choices(
-        platform=[
-            app_commands.Choice(name="LeetCode", value="LeetCode"),
-            app_commands.Choice(name="Codeforces", value="Codeforces"),
-            app_commands.Choice(name="GeeksforGeeks", value="GeeksforGeeks")
-        ],
-        difficulty=[
-            app_commands.Choice(name="Easy", value="Easy"),
-            app_commands.Choice(name="Medium", value="Medium"),
-            app_commands.Choice(name="Hard", value="Hard")
-        ]
-    )
+        if match:
+            slug = match.group(1)
+        else:
+            # If not a URL, treat input as slug directly
+            slug = url.strip()
+        
+        # Generate title from slug: replace hyphens with spaces, title case
+        title = slug.replace("-", " ").title()
+        
+        # Clean up: Remove trailing numbers that aren't followed by letters
+        clean_title = re.sub(r'\s+\d+$', '', title).strip()
+        
+        return {
+            "slug": slug,
+            "clean_title": clean_title,
+            "original_url": url if match else f"https://www.geeksforgeeks.org/problems/{slug}/"
+        }
+
+    def _generate_problem_url(self, platform: str, slug_or_url: str) -> str:
+        """Helper to generate correct URLs based on platform"""
+        if platform == "LeetCode":
+            return f"https://leetcode.com/problems/{slug_or_url}/"
+        elif platform == "Codeforces":
+            match = re.match(r"^(\d+)([A-Z]\d?)$", slug_or_url.upper())
+            if match:
+                return f"https://codeforces.com/contest/{match.group(1)}/problem/{match.group(2)}"
+            else:
+                return f"https://codeforces.com/problemset/problem/{slug_or_url}"
+        else: # GeeksforGeeks
+            # For GFG, we store the full URL in the title field, or reconstruct it from slug
+            if slug_or_url.startswith("http"):
+                return slug_or_url
+            return f"https://www.geeksforgeeks.org/problems/{slug_or_url}/"
+        
+
+    async def _fetch_and_verify_metadata(self, slug: str, platform: str):
+        """Helper to fetch metadata from respective APIs"""
+        if platform == "LeetCode":
+            clean_slug = normalize_problem_name(slug)
+            api = get_leetcode_api()
+            meta = await api.get_problem_metadata(clean_slug)
+            if meta:
+                return {
+                    "slug": meta.title_slug,
+                    "title": meta.title,
+                    "difficulty": meta.difficulty 
+                }
+        
+        elif platform == "Codeforces":
+            clean_slug = slug.strip().upper() 
+            api = get_codeforces_api()
+            meta = await api.get_problem_metadata(clean_slug)
+            if meta:
+                return {
+                    "slug": meta["slug"], 
+                    "title": meta["title"],
+                    "difficulty": meta["difficulty"]
+                }
+        
+        elif platform == "GeeksforGeeks":
+            # Centralized GFG Logic
+            gfg_data = self._parse_gfg_data(slug)
+            return {
+                "slug": gfg_data["slug"],
+                "title": gfg_data["original_url"], # Store URL as title (Backend Requirement)
+                "clean_title": gfg_data["clean_title"], # For display
+                "difficulty": "Easy" # Force Easy
+            }
+            
+        return None
+    # ==================================================================
+    # 2. Bulk Add Problems
+    # ==================================================================
+    @app_commands.command(name="bulkaddproblems", description="Add multiple problems from JSON file (Admin only)")
+    @app_commands.describe(file="JSON file with problems array")
     @app_commands.checks.has_permissions(administrator=True)
-    async def add_problem(
-        self, 
-        interaction: discord.Interaction,
-        problem_slug: str, 
-        platform: app_commands.Choice[str],
-        difficulty: app_commands.Choice[str],
-        topic: str
-    ):
-        """
-        Add a new problem to the database (Admin only)
-        
-        Example: /addproblem problem_slug:two-sum platform:LeetCode difficulty:Easy topic:Arrays
-        """
+    async def bulk_add_problems(self, interaction: discord.Interaction, file: discord.Attachment):
+        """Add multiple problems from a JSON file"""
         await interaction.response.defer()
         
         try:
-            selected_platform = platform.value
-            selected_difficulty = difficulty.value
+            content = await file.read()
+            data = json.loads(content.decode('utf-8'))
             
-            # Normalize problem name for LeetCode
-            if selected_platform == "LeetCode":
-                problem_slug = normalize_problem_name(problem_slug)
-            else:
-                problem_slug = problem_slug.strip()
-            
-            date_posted = datetime.now().date().isoformat()
-            
-            # ✅ FIXED: Check if problem already exists with platform parameter
-            existing = await self.bot.db.get_problem(problem_slug, selected_platform)
-            if existing:
-                await interaction.followup.send(
-                    embed=discord.Embed(
-                        title="⚠️ Problem Exists",
-                        description=f"Problem `{problem_slug}` already exists on {selected_platform}!",
-                        color=config.COLOR_WARNING
-                    )
-                )
+            if "problems" not in data:
+                await interaction.followup.send("❌ JSON must contain a 'problems' array")
                 return
             
-            # ✅ FIXED: Add problem with platform parameter
-            await self.bot.db.create_problem(
-                problem_slug=problem_slug,
-                platform=selected_platform,
-                problem_title=problem_slug.replace("-", " ").title(),
-                difficulty=selected_difficulty,
-                topic=topic,
-                date_posted=date_posted
-            )
+            problems = data["problems"]
+            added, skipped, errors = 0, 0, []
             
-            # Send confirmation
-            embed = discord.Embed(
-                title="✅ Problem Added!",
-                description=f"Successfully added `{problem_slug}` to the database",
-                color=config.COLOR_SUCCESS
-            )
-            embed.add_field(name="Platform", value=selected_platform, inline=True)
-            embed.add_field(name="Difficulty", value=selected_difficulty, inline=True)
-            embed.add_field(name="Topic", value=topic, inline=True)
-            embed.add_field(name="Date Posted", value=date_posted, inline=True)
+            for p in problems:
+                try:
+                    slug = p["slug"]
+                    platform = p.get("platform", "LeetCode")
+                    difficulty = p.get("difficulty", "Medium")
+                    academic_year = p.get("year", p.get("academic_year", "2"))
+                    topic = p.get("topic", "General")
+                    
+                    # Unified parsing logic
+                    if platform == "GeeksforGeeks":
+                        gfg_data = self._parse_gfg_data(slug)
+                        slug = gfg_data["slug"]
+                        title = gfg_data["original_url"] # Store URL
+                        difficulty = "Easy"
+                    elif platform == "LeetCode":
+                        slug = normalize_problem_name(slug)
+                        title = p.get("title", slug)
+                    elif platform == "Codeforces":
+                        slug = slug.strip().upper()
+                        title = p.get("title", slug)
+                    else:
+                        title = p.get("title", slug)
+                    
+                    existing = await self.bot.db.get_problem(slug, platform)
+                    if existing:
+                        skipped += 1
+                        continue
+                    
+                    # Note: We skip API verification for bulk add speed, 
+                    # assuming the JSON is prepared correctly.
+                    
+                    await self.bot.db.create_problem(
+                        problem_slug=slug,
+                        platform=platform,
+                        problem_title=title,
+                        difficulty=difficulty,
+                        academic_year=academic_year,
+                        topic=topic,
+                        is_potd=0,
+                        potd_date=None
+                    )
+                    added += 1
+                except Exception as e:
+                    errors.append(f"{p.get('slug', 'unknown')}: {str(e)}")
+            
+            embed = discord.Embed(title="📦 Bulk Add Complete", color=config.COLOR_SUCCESS)
+            embed.add_field(name="✅ Added", value=str(added), inline=True)
+            embed.add_field(name="⏭️ Skipped", value=str(skipped), inline=True)
+            embed.add_field(name="❌ Errors", value=str(len(errors)), inline=True)
+            
+            if errors:
+                error_text = "\n".join(errors[:5])
+                if len(errors) > 5: error_text += f"\n... and {len(errors) - 5} more"
+                embed.add_field(name="Error Details", value=f"```{error_text}```", inline=False)
             
             await interaction.followup.send(embed=embed)
             
         except Exception as e:
-            print(f"Error in addproblem: {e}")
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description="Failed to add problem. Please try again.",
-                    color=config.COLOR_ERROR
-                )
-            )
-        
-    @app_commands.command(name="problem", description="Get information about a specific problem")
-    @app_commands.describe(
-        problem_slug="Problem slug/ID",
-        platform="Platform (defaults to LeetCode)"
-    )
-    @app_commands.choices(platform=[
-        app_commands.Choice(name="LeetCode", value="LeetCode"),
-        app_commands.Choice(name="Codeforces", value="Codeforces"),
-        app_commands.Choice(name="GeeksforGeeks", value="GeeksforGeeks")
-    ])
-    async def get_problem_info(
-        self, 
-        interaction: discord.Interaction,
-        problem_slug: str,
-        platform: app_commands.Choice[str] = None
-    ):
-        """
-        Get information about a specific problem
-        
-        Example: /problem problem_slug:two-sum platform:LeetCode
-        """
-        await interaction.response.defer()
-        
-        try:
-            selected_platform = platform.value if platform else "LeetCode"
-            
-            # Normalize problem name for LeetCode
-            if selected_platform == "LeetCode":
-                problem_slug = normalize_problem_name(problem_slug)
-            else:
-                problem_slug = problem_slug.strip()
-            
-            # ✅ FIXED: Get problem data with platform parameter
-            problem = await self.bot.db.get_problem(problem_slug, selected_platform)
-            if not problem:
-                await interaction.followup.send(
-                    embed=discord.Embed(
-                        title="❌ Problem Not Found",
-                        description=f"Problem `{problem_slug}` not found on {selected_platform}.",
-                        color=config.COLOR_ERROR
-                    )
-                )
-                return
-            
-            # Build embed
-            title = problem.get("problem_title", problem_slug)
-            
-            # Generate URL based on platform
-            if selected_platform == "LeetCode":
-                url = f"https://leetcode.com/problems/{problem_slug}/"
-            elif selected_platform == "Codeforces":
-                url = f"https://codeforces.com/problemset/problem/{problem_slug}"
-            else:  # GeeksforGeeks
-                url = f"https://www.geeksforgeeks.org/problems/{problem_slug}/"
-            
-            embed = discord.Embed(
-                title=f"📚 {title}",
-                url=url,
-                color=config.COLOR_INFO
-            )
-            
-            # Color based on difficulty
-            if problem["difficulty"] == "Easy":
-                embed.color = 0x00FF00  # Green
-            elif problem["difficulty"] == "Medium":
-                embed.color = 0xFFAA00  # Orange
-            else:  # Hard
-                embed.color = 0xFF0000  # Red
-            
-            embed.add_field(name="Platform", value=selected_platform, inline=True)
-            embed.add_field(name="Difficulty", value=problem["difficulty"], inline=True)
-            embed.add_field(name="Topic", value=problem["topic"], inline=True)
-            
-            if problem.get("date_posted"):
-                embed.add_field(name="Date Posted", value=problem["date_posted"], inline=True)
-                embed.add_field(name="Status", value="🏆 POTD", inline=True)
-            else:
-                embed.add_field(name="Status", value="⚡ Practice", inline=True)
-            
-            points = config.POINTS.get(problem['difficulty'], 20)
-            embed.add_field(name="Points", value=f"{points} pts", inline=True)
-            
-            await interaction.followup.send(embed=embed)
-            
-        except Exception as e:
-            print(f"Error in problem info: {e}")
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description="Failed to retrieve problem information.",
-                    color=config.COLOR_ERROR
-                )
-            )
-        
-    @app_commands.command(name="daily", description="Get today's POTD (if set)")
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+
+    # ==================================================================
+    # 4. Get Today's POTD
+    # ==================================================================
+    @app_commands.command(name="potd", description="Get today's POTD (if set)")
     async def daily_problem(self, interaction: discord.Interaction):
-        """
-        Get today's problem (if set by admin)
-        
-        Usage: /daily
-        """
+        """Get today's problem"""
         await interaction.response.defer()
         
         try:
             today_str = datetime.now().date().isoformat()
-            
-            # Query all platforms for today's POTD
             potd_problems = []
             
             for platform in ["LeetCode", "Codeforces", "GeeksforGeeks"]:
-                async with self.bot.db.db.execute(
-                    "SELECT problem_slug, problem_title, difficulty, platform FROM Problems WHERE date_posted = ? AND platform = ?",
-                    (today_str, platform)
-                ) as cursor:
-                    rows = await cursor.fetchall()
-                    for row in rows:
-                        potd_problems.append({
-                            "slug": row[0],
-                            "title": row[1],
-                            "difficulty": row[2],
-                            "platform": row[3]
-                        })
+                rows = await self.bot.db.get_potd_for_date(today_str, platform)
+                potd_problems.extend(rows)
             
             if not potd_problems:
-                await interaction.followup.send(
-                    embed=discord.Embed(
-                        title="🌟 Daily Problem",
-                        description="No POTD set for today. Check back later!",
-                        color=config.COLOR_INFO
-                    )
-                )
+                await interaction.followup.send("🌟 No POTD set for today. Check back later!")
                 return
             
             embed = discord.Embed(
@@ -250,35 +205,169 @@ class Problems(commands.Cog):
             )
             
             for problem in potd_problems:
-                # Generate URL based on platform
-                if problem["platform"] == "LeetCode":
-                    url = f"https://leetcode.com/problems/{problem['slug']}/"
-                elif problem["platform"] == "Codeforces":
-                    url = f"https://codeforces.com/problemset/problem/{problem['slug']}"
+                platform = problem['platform']
+                
+                if platform == "GeeksforGeeks":
+                    gfg_data = self._parse_gfg_data(problem['problem_title']) # title is URL
+                    display_title = gfg_data['clean_title']
+                    url = problem['problem_title']
+                    # GFG Style: Clean Title, No Difficulty displayed
+                    field_name = f"Year {problem.get('academic_year', '?')} : {platform}"
                 else:
-                    url = f"https://www.geeksforgeeks.org/problems/{problem['slug']}/"
+                    display_title = problem['problem_title']
+                    url = self._generate_problem_url(platform, problem['problem_slug'])
+                    # Standard Style
+                    field_name = f"Year {problem.get('academic_year', '?')} ({problem['difficulty']}) : {platform}"
                 
                 embed.add_field(
-                    name=f"{problem['difficulty']} - {problem['platform']}",
-                    value=f"**{problem['title']}**\n[Solve Here]({url})",
+                    name=field_name,
+                    value=f"**{display_title}**\n[Solve Here]({url})",
                     inline=False
                 )
             
             embed.set_footer(text="Submit with /submit to earn points!")
-            
             await interaction.followup.send(embed=embed)
             
         except Exception as e:
-            print(f"Error in daily command: {e}")
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="❌ Error",
-                    description="Failed to retrieve daily problems.",
-                    color=config.COLOR_ERROR
-                )
-            )
+            print(f"Error in potd: {e}")
+            await interaction.followup.send("❌ Failed to retrieve daily problems.")
 
+    # ==================================================================
+    # 5. Set POTD (Manual)
+    # ==================================================================
+    @app_commands.command(name="setpotd", description="Set Problem of the Day (Admin only)")
+    @app_commands.describe(
+        problem_slug="Problem slug/ID",
+        platform="Platform",
+        year="Year Level"
+    )
+    @app_commands.choices(
+        platform=[
+            app_commands.Choice(name="LeetCode", value="LeetCode"),
+            app_commands.Choice(name="Codeforces", value="Codeforces"),
+            app_commands.Choice(name="GeeksforGeeks", value="GeeksforGeeks")
+        ],
+        year=[
+            app_commands.Choice(name="1st Year", value="1"),
+            app_commands.Choice(name="2nd Year", value="2"),
+            app_commands.Choice(name="3rd Year", value="3")
+        ]
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_potd(
+        self,
+        interaction: discord.Interaction,
+        problem_slug: str,
+        platform: str,
+        year: str
+    ):
+        """Set a problem as today's POTD with specific Year level"""
+        await interaction.response.defer()
+
+        # 1. Verify format via API helper (NOW HANDLES GFG URL PARSING)
+        meta = await self._fetch_and_verify_metadata(problem_slug, platform)
+        if not meta:
+            await interaction.followup.send(f"❌ Error: Problem `{problem_slug}` not found on {platform}.")
+            return
+            
+        final_slug = meta["slug"]
+        final_title = meta["title"] # URL for GFG, Title for others
+        final_difficulty = meta.get("difficulty", "Medium") # Easy for GFG
+        
+        today = datetime.now().date().isoformat()
+
+        # 2. Upsert (Create or Update)
+        await self.bot.db.create_problem(
+            problem_slug=final_slug,
+            platform=platform,
+            problem_title=final_title,
+            difficulty=final_difficulty,
+            academic_year=year,    # ✅ Updates the year
+            topic=None,         
+            is_potd=1,          # ✅ Set as POTD
+            potd_date=today
+        )
+
+        display_name = meta.get("clean_title", final_slug) # Pretty name for message
+
+        await interaction.followup.send(
+            embed=discord.Embed(
+                title="✅ POTD Set",
+                description=f"🏆 `{display_name}` is now **Year {year}** POTD on {platform}!",
+                color=config.COLOR_SUCCESS
+            )
+        )
+    # ==================================================================
+    # 6. Remove POTD
+    # ==================================================================
+    @app_commands.command(name="removepotd", description="Remove POTD status (Admin only)")
+    @app_commands.describe(problem_slug="Problem slug/ID", platform="Platform")
+    @app_commands.choices(platform=[
+        app_commands.Choice(name="LeetCode", value="LeetCode"),
+        app_commands.Choice(name="Codeforces", value="Codeforces"),
+        app_commands.Choice(name="GeeksforGeeks", value="GeeksforGeeks")
+    ])
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remove_potd(self, interaction: discord.Interaction, problem_slug: str, platform: str):
+        await interaction.response.defer()
+        
+        # Verify slug format
+        meta = await self._fetch_and_verify_metadata(problem_slug, platform)
+        search_slug = meta["slug"] if meta else problem_slug
+        if platform=="LeetCode" and not meta: search_slug = normalize_problem_name(problem_slug)
+        if platform=="Codeforces" and not meta: search_slug = problem_slug.strip().upper()
+        if platform=="GeeksforGeeks" and not meta: 
+             # Just try to parse it locally if API fail or not needed
+             gfg = self._parse_gfg_data(problem_slug)
+             search_slug = gfg["slug"]
+
+        await self.bot.db.unset_potd(search_slug, platform)
+        await interaction.followup.send(f"✅ Removed POTD status from `{search_slug}`.")
+    # ==================================================================
+    # 7. Remove all POTD
+    # ==================================================================
+    @app_commands.command(name="clearpotd", description="Remove POTD status from ALL problems (Admin only)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def clear_potd(self, interaction: discord.Interaction):
+        """Removes POTD status from all active POTDs"""
+        await interaction.response.defer()
+        try:
+            cursor = await self.bot.db.db.execute("UPDATE Problems SET is_potd = 0, potd_date = NULL WHERE is_potd = 1")
+            await self.bot.db.db.commit()
+            count = cursor.rowcount
+            if count > 0:
+                await interaction.followup.send(embed=discord.Embed(title="✅ POTD Cleared", description=f"Removed POTD status from **{count}** problems.", color=config.COLOR_SUCCESS))
+            else:
+                await interaction.followup.send(embed=discord.Embed(title="ℹ️ No Active POTDs", description="There were no active POTD problems to clear.", color=config.COLOR_INFO))
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}")
+
+    # ==================================================================
+    # 8. Problem Bank View
+    # ==================================================================
+    @app_commands.command(name="problembank", description="Admin: View the problem queue status")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def problem_bank(self, interaction: discord.Interaction):
+        """View upcoming problems in the queue"""
+        await interaction.response.defer()
+        
+        status = await self.bot.db.get_queue_status()
+        preview_rows = await self.bot.db.get_queue_preview(limit=10)
+        
+        embed = discord.Embed(title="📚 Problem Bank Status", color=config.COLOR_INFO)
+        stats = f"**Year 1:** {status.get('1', 0)}\n**Year 2:** {status.get('2', 0)}\n**Year 3:** {status.get('3', 0)}"
+        embed.add_field(name="Queue Counts", value=stats, inline=False)
+        
+        if preview_rows:
+            preview_text = ""
+            for row in preview_rows:
+                # row is tuple: (problem_title, academic_year, platform)
+                preview_text += f"• `Y{row[1]}` {row[0]} ({row[2]})\n"
+            embed.add_field(name="Next Up (Mixed)", value=preview_text, inline=False)
+        else:
+            embed.add_field(name="Next Up", value="*Queue is empty*", inline=False)
+            
+        await interaction.followup.send(embed=embed)
 
 async def setup(bot):
-    """Load the cog"""
     await bot.add_cog(Problems(bot))

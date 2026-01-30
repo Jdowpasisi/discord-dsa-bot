@@ -25,10 +25,10 @@ class Difficulty(Enum):
     HARD = "Hard"
 
 DIFFICULTY_POINTS = {
-    "Easy": 5,
+    "Easy": 10,
     "Medium": 10,
     "Hard": 15,
-    "1st Year": 5, 
+    "1st Year": 10, 
     "2nd Year": 10,
     "3rd Year": 15
 }
@@ -41,6 +41,40 @@ DIFFICULTY_POINTS = {
 def normalize_problem_name(name: str) -> str:
     if not name: return ""
     return name.lower().replace(" ", "-").strip("-")
+
+def parse_gfg_slug(input_str: str) -> str:
+    """
+    Extract slug from GFG URL or return cleaned slug.
+    
+    Examples:
+        'https://www.geeksforgeeks.org/problems/detect-cycle/1' -> 'detect-cycle'
+        'detect-cycle' -> 'detect-cycle'
+        'Detect Cycle' -> 'detect-cycle'
+    """
+    import re
+    
+    # Try to extract slug from URL pattern
+    gfg_url_pattern = r"https?://(?:www\.)?geeksforgeeks\.org/problems/([^/]+)/?.*"
+    match = re.match(gfg_url_pattern, input_str.strip())
+    
+    if match:
+        return match.group(1)
+    else:
+        # Not a URL, normalize it as a slug
+        return normalize_problem_name(input_str)
+
+def generate_gfg_title(slug: str) -> str:
+    """
+    Generate readable title from GFG slug.
+    
+    Example: 'detect-cycle' -> 'Detect Cycle'
+    """
+    import re
+    # Replace hyphens with spaces and title case
+    title = slug.replace("-", " ").title()
+    # Remove trailing numbers (e.g., 'Problem 1' at end)
+    clean_title = re.sub(r'\s+\d+$', '', title).strip()
+    return clean_title if clean_title else title
 
 def calculate_points(difficulty: str, is_duplicate: bool = False) -> int:
     if is_duplicate: return 0
@@ -91,7 +125,7 @@ async def validate_submission(
     # ==========================
     if platform == "LeetCode":
         if not user_profile.get("leetcode_username"):
-            return (SubmissionStatus.NOT_LINKED, "⚠️ Link LeetCode first: `/setup`", None)
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link LeetCode first: `/link` leetcode <handle>", None)
         
         leetcode_username = user_profile["leetcode_username"]
         api = get_leetcode_api()
@@ -141,12 +175,17 @@ async def validate_submission(
         if not user_profile.get("gfg_handle"):
             return (SubmissionStatus.NOT_LINKED, "⚠️ Link GFG first: `/link gfg <profile_url>`", None)
             
+        # ✅ FIX: Normalize GFG input (URL or slug) to consistent slug
+        clean_slug = parse_gfg_slug(raw_problem_name)
+        readable_title = generate_gfg_title(clean_slug)
+        problem_url = f"https://www.geeksforgeeks.org/problems/{clean_slug}/"
+        
         # Trust-Based Validation
         submission_data = {
-            "title": raw_problem_name,
-            "difficulty": "Medium",
-            "url": user_profile.get("gfg_handle"),
-            "slug": problem_id  # ← CHANGED: Use consistent key name
+            "title": readable_title,  # ✅ Readable title, not raw URL
+            "difficulty": "Easy",     # GFG always Easy
+            "url": problem_url,       # Canonical URL
+            "slug": clean_slug        # ✅ Normalized slug for duplicate detection
         }
 
     else:
