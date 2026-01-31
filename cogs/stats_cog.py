@@ -729,15 +729,6 @@ class StatsCog(commands.Cog):
         """Wait for bot to be ready before starting task."""
         await self.bot.wait_until_ready()
         logger.info("Bot ready - monthly leaderboard task will begin")
-    
-    # ==================== Legacy Prefix Commands ====================
-    
-    @commands.command(name="mystats")
-    async def mystats_legacy(self, ctx: commands.Context):
-        """Legacy command: View your stats (use /stats instead)"""
-        await ctx.send(
-            "ℹ️ This command is deprecated. Please use `/stats` instead for a better experience!"
-        )
 
 
 async def setup(bot: commands.Bot):

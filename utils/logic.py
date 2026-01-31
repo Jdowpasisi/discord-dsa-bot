@@ -317,3 +317,53 @@ def calculate_streaks(
 
 def format_streak_message(daily: int, weekly: int) -> str:
     return f"🔥 {daily} Day{'s' if daily!=1 else ''} | 📅 {weekly} Week{'s' if weekly!=1 else ''}"
+
+
+# ==========================
+# URL Generation
+# ==========================
+
+def generate_problem_url(platform: str, slug: str) -> str:
+    """
+    Generate the correct problem URL for any platform.
+    
+    Args:
+        platform: "LeetCode", "Codeforces", or "GeeksforGeeks"
+        slug: Problem identifier (e.g., "two-sum", "1872A", "detect-cycle")
+    
+    Returns:
+        Full URL to the problem page
+    
+    Examples:
+        generate_problem_url("LeetCode", "two-sum") 
+            -> "https://leetcode.com/problems/two-sum/"
+        generate_problem_url("Codeforces", "1872A") 
+            -> "https://codeforces.com/contest/1872/problem/A"
+        generate_problem_url("GeeksforGeeks", "detect-cycle") 
+            -> "https://www.geeksforgeeks.org/problems/detect-cycle/"
+    """
+    import re
+    
+    if platform == "LeetCode":
+        return f"https://leetcode.com/problems/{slug}/"
+    
+    elif platform == "Codeforces":
+        # Parse contest ID and problem letter from formats like "1872A" or "1872A1"
+        match = re.match(r"^(\d+)([A-Z]\d?)$", slug.upper())
+        if match:
+            contest_id = match.group(1)
+            problem_letter = match.group(2)
+            return f"https://codeforces.com/contest/{contest_id}/problem/{problem_letter}"
+        else:
+            # Fallback: problemset format (shouldn't normally reach here)
+            return f"https://codeforces.com/problemset/problem/{slug}"
+    
+    elif platform == "GeeksforGeeks":
+        # If it's already a full URL, return as-is
+        if slug.startswith("http"):
+            return slug
+        return f"https://www.geeksforgeeks.org/problems/{slug}/"
+    
+    else:
+        # Unknown platform fallback
+        return slug

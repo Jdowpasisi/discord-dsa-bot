@@ -12,9 +12,9 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, time, timedelta, timezone
 import logging
-import re # Needed for Codeforces URL fixing
 
 from database.manager import DatabaseManager
+from utils.logic import generate_problem_url
 
 logger = logging.getLogger(__name__)
 
@@ -36,28 +36,7 @@ class SchedulerCog(commands.Cog):
     def cog_unload(self):
         self.daily_problem_post.cancel()
 
-    # ==================== Helper Methods ====================
-
-    def _generate_problem_url(self, platform: str, slug: str) -> str:
-        """
-        Helper to generate correct URLs based on platform.
-        Fixes the Codeforces '1872A' -> 'contest/1872/problem/A' issue.
-        """
-        if platform == "LeetCode":
-            return f"https://leetcode.com/problems/{slug}/"
-        
-        elif platform == "Codeforces":
-            # Regex to split Number and Letter (e.g. 1872A -> 1872, A)
-            match = re.match(r"^(\d+)([A-Z]\d?)$", slug.upper())
-            if match:
-                return f"https://codeforces.com/contest/{match.group(1)}/problem/{match.group(2)}"
-            else:
-                return f"https://codeforces.com/problemset/problem/{slug}"
-                
-        else: # GeeksforGeeks
-            return f"https://www.geeksforgeeks.org/problems/{slug}/"
-
-    # ==================== Core Logic ====================
+    # ==================== Core Logic ======================================
 
     async def _post_daily_batch(self, batch_data: dict, note: str = ""):
         """
@@ -90,8 +69,8 @@ class SchedulerCog(commands.Cog):
         for year in sorted_years:
             p = batch_data[year]
             
-            # REGENERATE URL to ensure it is correct (fixes CF links)
-            safe_url = self._generate_problem_url(p['platform'], p['slug'])
+            # Use centralized URL generation from utils.logic
+            safe_url = generate_problem_url(p['platform'], p['slug'])
             
             # Display both difficulty and year
             difficulty = p.get('difficulty', 'Medium')

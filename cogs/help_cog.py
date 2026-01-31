@@ -16,146 +16,191 @@ class HelpCog(commands.Cog):
         
     @app_commands.command(
         name="help",
-        description="Display all available bot commands and features"
+        description="View all available commands"
     )
     async def help_command(self, interaction: discord.Interaction):
-        """
-        Display comprehensive help information about all available commands
-        
-        Args:
-            interaction: Discord interaction
-        """
+        """Display help for general user commands"""
         embed = discord.Embed(
-            title="🤖 DSA Bot - Complete Command Guide",
-            description="Track your coding journey across LeetCode, Codeforces, and GeeksforGeeks!",
+            title="📚 DSA Bot Commands",
+            description="Your daily coding companion!",
             color=config.COLOR_PRIMARY
         )
         
-        embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else None)
-        
-        # =============== USER SETUP ===============
         embed.add_field(
-            name="👤 User Setup",
+            name="👤 /setup — Set up your profile",
             value=(
-                "**`/setup`** - Configure your profile\n"
-                "• Set year level (1-4) and LeetCode username\n"
-                "• Example: `/setup year:2 leetcode_username:john_doe`\n"
-                "\n"
-                "**`/link`** - Link platform handles\n"
-                "• Connect your Codeforces or GeeksforGeeks accounts\n"
-                "• Example: `/link platform:codeforces handle:tourist`\n"
+                "```\n"
+                "/setup [year] [leetcode] [codeforces] [geeksforgeeks]\n"
+                "```\n"
+                "**Examples:**\n"
+                "• `/setup year:2` — Set year only\n"
+                "• `/setup leetcode:john_doe` — Link LeetCode\n"
+                "• `/setup year:3 codeforces:tourist` — Multiple at once"
             ),
             inline=False
         )
         
-        # =============== SUBMISSION ===============
         embed.add_field(
-            name="📝 Submission",
+            name="📝 /submit — Submit a solved problem",
             value=(
-                "**`/submit`** - Submit a solved problem\n"
-                "• **LeetCode:** `/submit problem:two-sum platform:LeetCode`\n"
-                "  - Auto-validates via LeetCode API\n"
-                "  - Points: Easy=10, Medium=20, Hard=40\n"
-                "\n"
-                "• **Codeforces:** `/submit problem:1872A platform:Codeforces`\n"
-                "  - Use contest+index format (e.g., 1872A)\n"
-                "  - Points: based on problem rating\n"
-                "\n"
-                "• **GeeksforGeeks:** `/submit problem:detect-cycle platform:GeeksforGeeks`\n"
-                "  - All GFG problems = Easy (10 points)\n"
-                "  - Use problem slug from URL\n"
-                "\n"
-                "**Bonuses:**\n"
-                "• 🏆 POTD: 15 pts base + bonuses for 2nd/3rd solve\n"
-                "• 🔥 Daily Streak: +5 pts (consecutive days)\n"
-                "• 📅 Weekly Streak: +20 pts (consecutive weeks)\n"
+                "```\n"
+                "/submit <problem> <platform>\n"
+                "```\n"
+                "**Examples:**\n"
+                "• `/submit problem:two-sum platform:LeetCode`\n"
+                "• `/submit problem:1872A platform:Codeforces`\n"
+                "• `/submit problem:detect-cycle platform:GeeksforGeeks`"
             ),
             inline=False
         )
         
-        # =============== STATS ===============
         embed.add_field(
-            name="📊 Stats & Rankings",
+            name="🏆 /potd — View today's Problem of the Day",
             value=(
-                "**`/stats`** - View your statistics\n"
-                "• Total points, rank, streaks, last submission\n"
-                "• Optional: `/stats user:@someone`\n"
-                "\n"
-                "**`/leaderboard`** - View top performers\n"
-                "• **Filters:**\n"
-                "  - `period`: Weekly (default), Monthly, All-Time\n"
-                "  - `year`: 1st, 2nd, 3rd, 4th Year\n"
-                "• Examples:\n"
-                "  - `/leaderboard` → Weekly, All Years\n"
-                "  - `/leaderboard period:monthly year:2` → Monthly Year 2\n"
-                "  - `/leaderboard period:all-time` → Global rankings\n"
-                "\n"
-                "**Weekly Period:** Monday to Sunday\n"
-                "**Monthly Period:** 1st to last day of current month\n"
+                "```\n"
+                "/potd\n"
+                "```\n"
+                "Shows all active POTD problems with solve links.\n"
+                "POTD submissions earn **15 bonus points**!"
             ),
             inline=False
         )
         
-        # =============== DAILY CHALLENGE ===============
         embed.add_field(
-            name="🏆 Daily Challenge (POTD)",
+            name="📊 /stats — View user statistics",
             value=(
-                "**`/potd`** - View today's Problem of the Day\n"
-                "• Shows active POTD problems for all platforms\n"
-                "• Includes direct solve links\n"
-                "\n"
-                "**POTD Rewards:**\n"
-                "• Base: 15 points (fixed)\n"
-                "• 2nd POTD solve of the day: +5 bonus\n"
-                "• 3rd POTD solve of the day: +10 bonus\n"
+                "```\n"
+                "/stats [user]\n"
+                "```\n"
+                "**Examples:**\n"
+                "• `/stats` — Your own stats\n"
+                "• `/stats user:@someone` — View another user"
             ),
             inline=False
         )
         
-        # =============== ADMIN ONLY ===============
         embed.add_field(
-            name="⚙️ Admin Commands",
+            name="🏅 /leaderboard — View rankings",
             value=(
-                "**`/addproblem`** - Add a problem to database\n"
-                "• LeetCode/CF: Verifies via API\n"
-                "• GFG: Accepts full URL, auto-extracts slug\n"
-                "  - Example: `/addproblem problem_slug:https://www.geeksforgeeks.org/problems/detect-cycle-in-an-undirected-graph/ ...`\n"
-                "  - **Note:** All GFG problems forced to Easy (1st Year)\n"
-                "\n"
-                "**`/setpotd`** - Set today's POTD\n"
-                "**`/removepotd`** - Remove POTD status from a problem\n"
-                "**`/clearpotd`** - Clear all active POTDs\n"
-                "**`/force_potd`** - Manually trigger POTD selection\n"
-                "**`/bulkaddproblems`** - Import problems from JSON file\n"
+                "```\n"
+                "/leaderboard [limit] [period] [year]\n"
+                "```\n"
+                "**Examples:**\n"
+                "• `/leaderboard` — Weekly, all years (default)\n"
+                "• `/leaderboard period:monthly year:2`\n"
+                "• `/leaderboard limit:20 period:all-time`"
             ),
             inline=False
         )
         
-        # =============== QUICK REFERENCE ===============
         embed.add_field(
-            name="🎯 Quick Reference",
+            name="💡 Points System",
+            value="Easy: 10 │ Medium: 10 │ Hard: 15 │ POTD: 15",
+            inline=False
+        )
+        
+        embed.set_footer(text="Start with /setup │ Admins: use /adminhelp")
+        
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(
+        name="adminhelp",
+        description="View admin-only commands"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def admin_help_command(self, interaction: discord.Interaction):
+        """Display help for admin commands (ephemeral)"""
+        embed = discord.Embed(
+            title="⚙️ Admin Commands",
+            description="Manage problems and users (all responses are private)",
+            color=config.COLOR_WARNING
+        )
+        
+        embed.add_field(
+            name="📋 /setpotd — Set Problem of the Day",
             value=(
-                "**Points System:**\n"
-                "• Easy: 10 | Medium: 20 | Hard: 40\n"
-                "• POTD: 15 + bonuses\n"
-                "• Daily Streak: +5 | Weekly Streak: +20\n"
-                "\n"
-                "**Rules:**\n"
-                "• Submit in #dsa or #potd channels only\n"
-                "• One submission per problem (no duplicates)\n"
-                "• 10-second cooldown between submissions\n"
+                "```\n"
+                "/setpotd <problem_slug> <platform> <year>\n"
+                "```\n"
+                "**Examples:**\n"
+                "• `/setpotd problem_slug:two-sum platform:LeetCode year:1`\n"
+                "• `/setpotd problem_slug:1872A platform:Codeforces year:2`\n"
+                "• `/setpotd problem_slug:https://geeksforgeeks.org/problems/detect-cycle/ platform:GeeksforGeeks year:1`"
             ),
             inline=False
         )
         
-        embed.set_footer(
-            text="💡 Tip: Start with /setup, then check /potd daily for bonus points!",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
+        embed.add_field(
+            name="🗑️ /removepotd — Remove POTD status",
+            value=(
+                "```\n"
+                "/removepotd <problem_slug> <platform>\n"
+                "```\n"
+                "**Example:** `/removepotd problem_slug:two-sum platform:LeetCode`"
+            ),
+            inline=False
         )
         
-        embed.timestamp = discord.utils.utcnow()
+        embed.add_field(
+            name="🧹 /clearpotd — Clear all POTDs",
+            value=(
+                "```\n"
+                "/clearpotd\n"
+                "```\n"
+                "Removes POTD status from ALL active problems."
+            ),
+            inline=False
+        )
         
-        await interaction.response.send_message(embed=embed, ephemeral=False)
+        embed.add_field(
+            name="📦 /problembank — View queue status",
+            value=(
+                "```\n"
+                "/problembank\n"
+                "```\n"
+                "Shows problem counts per year and upcoming problems."
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📥 /bulkaddproblems — Import from JSON",
+            value=(
+                "```\n"
+                "/bulkaddproblems <file>\n"
+                "```\n"
+                "Upload a JSON file with problem data to bulk import."
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="👤 /reset_user — Delete user data",
+            value=(
+                "```\n"
+                "/reset_user <user>\n"
+                "```\n"
+                "**Example:** `/reset_user user:@someone`\n"
+                "⚠️ Permanently deletes all user data & submissions."
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔧 !sync — Sync slash commands (Owner)",
+            value=(
+                "```\n"
+                "!sync [scope]\n"
+                "```\n"
+                "• `!sync` — Instant sync to current server\n"
+                "• `!sync global` — Global sync (~1 hour delay)"
+            ),
+            inline=False
+        )
+        
+        embed.set_footer(text="All responses auto-delete or are ephemeral")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

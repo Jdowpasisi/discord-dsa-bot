@@ -9,8 +9,12 @@ from discord import app_commands
 from datetime import datetime
 import config
 import json
-import re
-from utils.logic import normalize_problem_name
+from utils.logic import (
+    normalize_problem_name,
+    parse_gfg_slug,
+    generate_gfg_title,
+    generate_problem_url
+)
 from utils.leetcode_api import get_leetcode_api
 from utils.codeforces_api import get_codeforces_api
 
@@ -19,46 +23,6 @@ class Problems(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-
-    def _parse_gfg_data(self, url: str) -> dict:
-        """Parse GFG URL to extract slug and generate clean title"""
-        # Extract slug from URL
-        gfg_url_pattern = r"https?://(?:www\.)?geeksforgeeks\.org/problems/([^/]+)/?.*"
-        match = re.match(gfg_url_pattern, url)
-        
-        if match:
-            slug = match.group(1)
-        else:
-            # If not a URL, treat input as slug directly
-            slug = url.strip()
-        
-        # Generate title from slug: replace hyphens with spaces, title case
-        title = slug.replace("-", " ").title()
-        
-        # Clean up: Remove trailing numbers that aren't followed by letters
-        clean_title = re.sub(r'\s+\d+$', '', title).strip()
-        
-        return {
-            "slug": slug,
-            "clean_title": clean_title,
-            "original_url": url if match else f"https://www.geeksforgeeks.org/problems/{slug}/"
-        }
-
-    def _generate_problem_url(self, platform: str, slug_or_url: str) -> str:
-        """Helper to generate correct URLs based on platform"""
-        if platform == "LeetCode":
-            return f"https://leetcode.com/problems/{slug_or_url}/"
-        elif platform == "Codeforces":
-            match = re.match(r"^(\d+)([A-Z]\d?)$", slug_or_url.upper())
-            if match:
-                return f"https://codeforces.com/contest/{match.group(1)}/problem/{match.group(2)}"
-            else:
-                return f"https://codeforces.com/problemset/problem/{slug_or_url}"
-        else: # GeeksforGeeks
-            # For GFG, we store the full URL in the title field, or reconstruct it from slug
-            if slug_or_url.startswith("http"):
-                return slug_or_url
-            return f"https://www.geeksforgeeks.org/problems/{slug_or_url}/"
         
 
     async def _fetch_and_verify_metadata(self, slug: str, platform: str):
@@ -86,13 +50,15 @@ class Problems(commands.Cog):
                 }
         
         elif platform == "GeeksforGeeks":
-            # Centralized GFG Logic
-            gfg_data = self._parse_gfg_data(slug)
+            # Use centralized GFG parsing from utils.logic
+            clean_slug = parse_gfg_slug(slug)
+            clean_title = generate_gfg_title(clean_slug)
+            canonical_url = generate_problem_url(platform, clean_slug)
             return {
-                "slug": gfg_data["slug"],
-                "title": gfg_data["original_url"], # Store URL as title (Backend Requirement)
-                "clean_title": gfg_data["clean_title"], # For display
-                "difficulty": "Easy" # Force Easy
+                "slug": clean_slug,
+                "title": canonical_url,  # Store URL as title (Backend Requirement)
+                "clean_title": clean_title,  # For display
+                "difficulty": "Easy"  # Force Easy
             }
             
         return None
@@ -104,7 +70,7 @@ class Problems(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def bulk_add_problems(self, interaction: discord.Interaction, file: discord.Attachment):
         """Add multiple problems from a JSON file"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         
         try:
             content = await file.read()
@@ -125,11 +91,11 @@ class Problems(commands.Cog):
                     academic_year = p.get("year", p.get("academic_year", "2"))
                     topic = p.get("topic", "General")
                     
-                    # Unified parsing logic
+                    # Unified parsing logic using centralized functions
                     if platform == "GeeksforGeeks":
-                        gfg_data = self._parse_gfg_data(slug)
-                        slug = gfg_data["slug"]
-                        title = gfg_data["original_url"] # Store URL
+                        clean_slug = parse_gfg_slug(slug)
+                        slug = clean_slug
+                        title = generate_problem_url(platform, clean_slug)  # Store URL
                         difficulty = "Easy"
                     elif platform == "LeetCode":
                         slug = normalize_problem_name(slug)
@@ -208,14 +174,15 @@ class Problems(commands.Cog):
                 platform = problem['platform']
                 
                 if platform == "GeeksforGeeks":
-                    gfg_data = self._parse_gfg_data(problem['problem_title']) # title is URL
-                    display_title = gfg_data['clean_title']
+                    # Use centralized GFG parsing
+                    clean_slug = parse_gfg_slug(problem['problem_title'])  # title is URL
+                    display_title = generate_gfg_title(clean_slug)
                     url = problem['problem_title']
                     # GFG Style: Clean Title, No Difficulty displayed
                     field_name = f"Year {problem.get('academic_year', '?')} : {platform}"
                 else:
                     display_title = problem['problem_title']
-                    url = self._generate_problem_url(platform, problem['problem_slug'])
+                    url = generate_problem_url(platform, problem['problem_slug'])
                     # Standard Style
                     field_name = f"Year {problem.get('academic_year', '?')} ({problem['difficulty']}) : {platform}"
                 
@@ -262,7 +229,7 @@ class Problems(commands.Cog):
         year: str
     ):
         """Set a problem as today's POTD with specific Year level"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         # 1. Verify format via API helper (NOW HANDLES GFG URL PARSING)
         meta = await self._fetch_and_verify_metadata(problem_slug, platform)
@@ -309,17 +276,18 @@ class Problems(commands.Cog):
     ])
     @app_commands.checks.has_permissions(administrator=True)
     async def remove_potd(self, interaction: discord.Interaction, problem_slug: str, platform: str):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         
         # Verify slug format
         meta = await self._fetch_and_verify_metadata(problem_slug, platform)
         search_slug = meta["slug"] if meta else problem_slug
-        if platform=="LeetCode" and not meta: search_slug = normalize_problem_name(problem_slug)
-        if platform=="Codeforces" and not meta: search_slug = problem_slug.strip().upper()
-        if platform=="GeeksforGeeks" and not meta: 
-             # Just try to parse it locally if API fail or not needed
-             gfg = self._parse_gfg_data(problem_slug)
-             search_slug = gfg["slug"]
+        if platform == "LeetCode" and not meta:
+            search_slug = normalize_problem_name(problem_slug)
+        if platform == "Codeforces" and not meta:
+            search_slug = problem_slug.strip().upper()
+        if platform == "GeeksforGeeks" and not meta:
+            # Use centralized parsing if metadata fetch failed
+            search_slug = parse_gfg_slug(problem_slug)
 
         await self.bot.db.unset_potd(search_slug, platform)
         await interaction.followup.send(f"✅ Removed POTD status from `{search_slug}`.")
@@ -330,7 +298,7 @@ class Problems(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def clear_potd(self, interaction: discord.Interaction):
         """Removes POTD status from all active POTDs"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         try:
             cursor = await self.bot.db.db.execute("UPDATE Problems SET is_potd = 0, potd_date = NULL WHERE is_potd = 1")
             await self.bot.db.db.commit()
@@ -349,7 +317,7 @@ class Problems(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def problem_bank(self, interaction: discord.Interaction):
         """View upcoming problems in the queue"""
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         
         status = await self.bot.db.get_queue_status()
         preview_rows = await self.bot.db.get_queue_preview(limit=10)

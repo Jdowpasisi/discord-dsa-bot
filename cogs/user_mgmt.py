@@ -1,143 +1,145 @@
 """
 User Management Cog
-Handles user profile setup with year level and LeetCode username
+Handles user profile setup with year level and platform linking
 """
 
 import discord
 from discord.ext import commands
 from discord import app_commands
+from typing import Optional
 
 # Valid year levels
 VALID_YEARS = ["1", "2", "3", "4", "General"]
+
 
 class UserManagementCog(commands.Cog):
     """User profile management commands"""
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        
-    @app_commands.command(name="setup", description="Update your year level")
-    @app_commands.describe(year="Your current year level")
+
+    @app_commands.command(name="setup", description="Set up or update your profile (year level and platform handles)")
+    @app_commands.describe(
+        year="Your current year level",
+        leetcode="Your LeetCode username",
+        codeforces="Your Codeforces handle",
+        geeksforgeeks="Your GeeksforGeeks handle or profile URL"
+    )
     @app_commands.choices(
         year=[app_commands.Choice(name=y, value=y) for y in VALID_YEARS]
     )
     async def setup(
         self,
         interaction: discord.Interaction,
-        year: app_commands.Choice[str]
+        year: Optional[app_commands.Choice[str]] = None,
+        leetcode: Optional[str] = None,
+        codeforces: Optional[str] = None,
+        geeksforgeeks: Optional[str] = None
     ):
+        """
+        Unified setup command for year level and platform handles.
+        Users can update any combination of fields in a single command.
+        """
+        # Check if at least one argument is provided
+        if year is None and leetcode is None and codeforces is None and geeksforgeeks is None:
+            await interaction.response.send_message(
+                "❌ Please provide at least one field to update.\n"
+                "**Options:** `year`, `leetcode`, `codeforces`, `geeksforgeeks`",
+                ephemeral=True
+            )
+            return
+
         try:
             discord_id = interaction.user.id
-            selected_year = year.value
+            db = self.bot.db
+            updates = []  # Track what was updated for the response
+            errors = []   # Track validation errors
 
-            user = await self.bot.db.get_user(discord_id)
+            # Ensure user exists
+            user = await db.get_user(discord_id)
             if not user:
-                await self.bot.db.create_user(discord_id)
+                await db.create_user(discord_id)
 
-            await self.bot.db.update_user_profile(
-                discord_id,
-                student_year=selected_year
-            )
+            # --- Validation ---
+            
+            # Clean handles
+            lc_handle = leetcode.strip() if leetcode else None
+            cf_handle = codeforces.strip() if codeforces else None
+            gfg_handle = geeksforgeeks.strip() if geeksforgeeks else None
 
+            # LeetCode validation
+            if lc_handle:
+                if " " in lc_handle:
+                    errors.append("LeetCode username cannot contain spaces.")
+                else:
+                    # Uniqueness check
+                    async with db.db.execute(
+                        "SELECT discord_id FROM Users WHERE leetcode_username = ? AND discord_id != ?",
+                        (lc_handle, discord_id)
+                    ) as cursor:
+                        if await cursor.fetchone():
+                            errors.append(f"LeetCode `{lc_handle}` is already linked to another user.")
+
+            # Codeforces validation
+            if cf_handle:
+                if " " in cf_handle:
+                    errors.append("Codeforces handle cannot contain spaces.")
+                else:
+                    # Uniqueness check
+                    async with db.db.execute(
+                        "SELECT discord_id FROM Users WHERE codeforces_handle = ? AND discord_id != ?",
+                        (cf_handle, discord_id)
+                    ) as cursor:
+                        if await cursor.fetchone():
+                            errors.append(f"Codeforces `{cf_handle}` is already linked to another user.")
+
+            # If there are validation errors, report and exit
+            if errors:
+                error_text = "\n".join(f"• {e}" for e in errors)
+                await interaction.response.send_message(
+                    f"❌ **Validation Failed:**\n{error_text}",
+                    ephemeral=True
+                )
+                return
+
+            # --- Apply Updates ---
+            
+            # Year update
+            if year is not None:
+                await db.update_user_profile(discord_id, student_year=year.value)
+                updates.append(f"Year → **{year.value}**")
+
+            # LeetCode update
+            if lc_handle:
+                await db.update_user_profile(discord_id, leetcode_username=lc_handle)
+                updates.append(f"LeetCode → `{lc_handle}`")
+
+            # Codeforces update
+            if cf_handle:
+                await db.update_user_profile(discord_id, codeforces_handle=cf_handle)
+                updates.append(f"Codeforces → `{cf_handle}`")
+
+            # GeeksforGeeks update
+            if gfg_handle:
+                await db.update_user_profile(discord_id, gfg_handle=gfg_handle)
+                updates.append(f"GeeksforGeeks → `{gfg_handle}`")
+
+            # --- Response ---
             embed = discord.Embed(
                 title="✅ Profile Updated",
+                description="\n".join(updates),
                 color=discord.Color.green()
             )
-            embed.add_field(name="Year Level", value=selected_year, inline=True)
+            embed.set_footer(text="Use /setup again to update any field")
 
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         except Exception as e:
             print(f"Error in /setup: {e}")
             await interaction.response.send_message(
-                "❌ Failed to update profile.",
+                "❌ Failed to update profile. Please try again.",
                 ephemeral=True
             )
-    @app_commands.command(name="link", description="Link your coding platform profile")
-    @app_commands.describe(
-        platform="The platform to link",
-        handle="Your username/handle"
-    )
-    @app_commands.choices(platform=[
-        app_commands.Choice(name="LeetCode", value="LeetCode"),
-        app_commands.Choice(name="Codeforces", value="Codeforces"),
-        app_commands.Choice(name="GeeksforGeeks", value="GeeksforGeeks")
-    ])
-    async def link(
-        self,
-        interaction: discord.Interaction,
-        platform: app_commands.Choice[str],
-        handle: str
-    ):
-        try:
-            discord_id = interaction.user.id
-            selected_platform = platform.value
-            clean_handle = handle.strip()
-
-            if not clean_handle:
-                await interaction.response.send_message(
-                    "❌ Handle cannot be empty.",
-                    ephemeral=True
-                )
-                return
-
-            if " " in clean_handle and selected_platform != "GeeksforGeeks":
-                await interaction.response.send_message(
-                    "❌ Handle cannot contain spaces.",
-                    ephemeral=True
-                )
-                return
-
-            db = self.bot.db
-
-            user = await db.get_user(discord_id)
-            if not user:
-                await db.create_user(discord_id)
-
-            # Platform-specific uniqueness checks
-            column_map = {
-                "LeetCode": "leetcode_username",
-                "Codeforces": "codeforces_handle"
-            }
-
-            if selected_platform in column_map:
-                column = column_map[selected_platform]
-                query = f"""
-                    SELECT discord_id FROM Users
-                    WHERE {column} = ? AND discord_id != ?
-                """
-                async with db.db.execute(query, (clean_handle, discord_id)) as cursor:
-                    if await cursor.fetchone():
-                        await interaction.response.send_message(
-                            f"❌ `{clean_handle}` is already linked on {selected_platform}.",
-                            ephemeral=True
-                        )
-                        return
-
-            # Update profile
-            if selected_platform == "LeetCode":
-                await db.update_user_profile(discord_id, leetcode_username=clean_handle)
-            elif selected_platform == "Codeforces":
-                await db.update_user_profile(discord_id, codeforces_handle=clean_handle)
-            else:
-                await db.update_user_profile(discord_id, gfg_handle=clean_handle)
-
-            embed = discord.Embed(
-                title="🔗 Profile Linked",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Platform", value=selected_platform, inline=True)
-            embed.add_field(name="Username", value=clean_handle, inline=True)
-
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        except Exception as e:
-            print(f"Error in /link: {e}")
-            await interaction.response.send_message(
-                "❌ Failed to link profile.",
-                ephemeral=True
-            )
-
 
     @app_commands.command(name="reset_user", description="Admin: Delete a user from the database")
     @commands.is_owner()
@@ -161,6 +163,7 @@ class UserManagementCog(commands.Cog):
             
         except Exception as e:
             await interaction.followup.send(f"❌ Error resetting user: {e}")
+
 
 async def setup(bot: commands.Bot) -> None:
     """Load the UserManagementCog"""

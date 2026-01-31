@@ -90,24 +90,29 @@ class LeetCodeBot(commands.Bot):
             Usage: !sync (Syncs global commands to THIS server instantly)
             """
             if not await self.is_owner(ctx.author):
-                await ctx.send("❌ Only the bot owner can use this command.")
-                return
+                return  # Silently ignore non-owners
+            
+            # Delete the command message to reduce clutter
+            try:
+                await ctx.message.delete()
+            except:
+                pass
             
             try:
                 # 1. GLOBAL SYNC (Slow, takes 1 hour to update)
                 if scope.lower() == "global":
-                    await ctx.send("⏳ Syncing **globally** (updates in ~1 hour)...")
+                    msg = await ctx.send("⏳ Syncing **globally** (updates in ~1 hour)...")
                     synced = await self.tree.sync()
-                    await ctx.send(f"✅ Synced {len(synced)} global commands.")
+                    await msg.edit(content=f"✅ Synced {len(synced)} global commands.", delete_after=10)
                     print(f"Global sync: {len(synced)} commands")
                     
                 # 2. GUILD SYNC (The "Copy" Trick - Instant Update)
                 else:
                     if not ctx.guild:
-                        await ctx.send("❌ Guild sync must be run inside a server.")
+                        await ctx.send("❌ Guild sync must be run inside a server.", delete_after=5)
                         return
 
-                    await ctx.send(f"⏳ Syncing commands to **{ctx.guild.name}**...")
+                    msg = await ctx.send(f"⏳ Syncing commands to **{ctx.guild.name}**...")
                     
                     # STEP A: Clear old guild commands
                     self.tree.clear_commands(guild=ctx.guild)
@@ -119,15 +124,14 @@ class LeetCodeBot(commands.Bot):
                     # STEP C: Sync
                     synced = await self.tree.sync(guild=ctx.guild)
                     
-                    await ctx.send(
-                        f"✅ **INSTANT SYNC COMPLETE!**\n"
-                        f"Synced {len(synced)} commands to this server:\n"
-                        f"{', '.join(f'`/{cmd.name}`' for cmd in synced)}"
+                    await msg.edit(
+                        content=f"✅ Synced {len(synced)} commands: {', '.join(f'`/{cmd.name}`' for cmd in synced)}",
+                        delete_after=10
                     )
                     print(f"Guild sync ({ctx.guild.name}): {len(synced)} commands")
                 
             except Exception as e:
-                await ctx.send(f"❌ Sync failed: {e}")
+                await ctx.send(f"❌ Sync failed: {e}", delete_after=10)
                 print(f"Sync error: {e}")
 
         # Register error handler
