@@ -125,7 +125,7 @@ async def validate_submission(
     # ==========================
     if platform == "LeetCode":
         if not user_profile.get("leetcode_username"):
-            return (SubmissionStatus.NOT_LINKED, "⚠️ Link LeetCode first: `/link` leetcode <handle>", None)
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link your LeetCode account first using `/setup leetcode:<your_username>`", None)
         
         leetcode_username = user_profile["leetcode_username"]
         api = get_leetcode_api()
@@ -153,7 +153,7 @@ async def validate_submission(
     # ==========================
     elif platform == "Codeforces":
         if not user_profile.get("codeforces_handle"):
-            return (SubmissionStatus.NOT_LINKED, "⚠️ Link Codeforces first: `/link codeforces <handle>`", None)
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link your Codeforces account first using `/setup codeforces:<your_handle>`", None)
             
         cf_api = get_codeforces_api()
         verified, msg, meta = await cf_api.verify_submission(user_profile["codeforces_handle"], problem_id)
@@ -173,7 +173,7 @@ async def validate_submission(
     # ==========================
     elif platform == "GeeksforGeeks":
         if not user_profile.get("gfg_handle"):
-            return (SubmissionStatus.NOT_LINKED, "⚠️ Link GFG first: `/link gfg <profile_url>`", None)
+            return (SubmissionStatus.NOT_LINKED, "⚠️ Link your GFG account first using `/setup geeksforgeeks:<your_handle>`", None)
             
         # ✅ FIX: Normalize GFG input (URL or slug) to consistent slug
         clean_slug = parse_gfg_slug(raw_problem_name)

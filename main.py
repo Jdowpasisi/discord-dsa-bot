@@ -22,7 +22,8 @@ Requirements:
 
 Environment Variables:
     DISCORD_TOKEN - Your Discord bot token (required)
-    DATABASE_PATH - Path to SQLite database (optional, defaults to data/leetcode_bot.db)
+    DATABASE_URL - PostgreSQL connection URL for Supabase (recommended for deployment)
+    DATABASE_PATH - Path to SQLite database (fallback for local development)
 """
 
 from keep_alive import keep_alive
@@ -35,9 +36,17 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-from database import DatabaseManager
-from utils.leetcode_api import close_leetcode_api
+# Import the appropriate database manager based on config
 import config
+
+if config.USE_SUPABASE:
+    from database.manager_supabase import DatabaseManager
+    print("📦 Using Supabase/PostgreSQL database")
+else:
+    from database.manager import DatabaseManager
+    print("📦 Using local SQLite database")
+
+from utils.leetcode_api import close_leetcode_api
 
 
 class LeetCodeBot(commands.Bot):
@@ -54,7 +63,12 @@ class LeetCodeBot(commands.Bot):
             intents=intents
         )
         
-        self.db = DatabaseManager(config.DATABASE_PATH)
+        # Initialize the appropriate database manager
+        if config.USE_SUPABASE:
+            self.db = DatabaseManager(config.DATABASE_URL)
+        else:
+            self.db = DatabaseManager(config.DATABASE_PATH)
+        
         self.start_time = datetime.now()
     
     async def is_owner(self, user: discord.User) -> bool:
