@@ -25,6 +25,7 @@ Environment Variables:
     DATABASE_PATH - Path to SQLite database (optional, defaults to data/leetcode_bot.db)
 """
 
+from keep_alive import keep_alive
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -422,6 +423,9 @@ async def main():
     
     print("\n🤖 Initializing bot...\n")
     
+    keep_alive()  # <--- ADD THIS LINE
+    print("🌍 Web server started for Render keep-alive")
+
     bot = LeetCodeBot()
     
     try:
