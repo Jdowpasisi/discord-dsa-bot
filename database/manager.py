@@ -102,6 +102,42 @@ class DatabaseManager:
             (discord_id,)
         )
         await self.db.commit()
+    
+    async def check_handle_exists(self, handle_type: str, handle_value: str, exclude_discord_id: int = None) -> bool:
+        """
+        Check if a handle (leetcode_username, codeforces_handle, etc.) is already in use.
+        
+        Args:
+            handle_type: Column name ('leetcode_username', 'codeforces_handle', 'gfg_handle')
+            handle_value: The handle to check
+            exclude_discord_id: Exclude this user from the check (for updates)
+            
+        Returns:
+            True if handle exists (taken by another user), False otherwise
+        """
+        if exclude_discord_id:
+            async with self.db.execute(
+                f"SELECT discord_id FROM Users WHERE {handle_type} = ? AND discord_id != ?",
+                (handle_value, exclude_discord_id)
+            ) as cursor:
+                return await cursor.fetchone() is not None
+        else:
+            async with self.db.execute(
+                f"SELECT discord_id FROM Users WHERE {handle_type} = ?",
+                (handle_value,)
+            ) as cursor:
+                return await cursor.fetchone() is not None
+    
+    async def delete_user(self, discord_id: int) -> None:
+        """
+        Delete a user and all their submissions from the database.
+        
+        Args:
+            discord_id: Discord user ID to delete
+        """
+        await self.db.execute("DELETE FROM Submissions WHERE discord_id = ?", (discord_id,))
+        await self.db.execute("DELETE FROM Users WHERE discord_id = ?", (discord_id,))
+        await self.db.commit()
         
     async def update_user_profile(
         self, 

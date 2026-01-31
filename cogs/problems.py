@@ -25,8 +25,14 @@ class Problems(commands.Cog):
         self.bot = bot
         
 
-    async def _fetch_and_verify_metadata(self, slug: str, platform: str):
-        """Helper to fetch metadata from respective APIs"""
+    async def _fetch_and_verify_metadata(self, slug: str, platform: str, original_url: str = None):
+        """Helper to fetch metadata from respective APIs
+        
+        Args:
+            slug: Problem slug or URL
+            platform: Platform name
+            original_url: For GFG, preserve the original URL provided by admin
+        """
         if platform == "LeetCode":
             clean_slug = normalize_problem_name(slug)
             api = get_leetcode_api()
@@ -53,10 +59,18 @@ class Problems(commands.Cog):
             # Use centralized GFG parsing from utils.logic
             clean_slug = parse_gfg_slug(slug)
             clean_title = generate_gfg_title(clean_slug)
-            canonical_url = generate_problem_url(platform, clean_slug)
+            
+            # Preserve original URL if provided, otherwise use input as-is if it's a URL
+            if original_url:
+                stored_url = original_url
+            elif slug.startswith("http"):
+                stored_url = slug  # Admin provided a URL, keep it exactly
+            else:
+                stored_url = generate_problem_url(platform, clean_slug)  # Fallback to generated
+            
             return {
                 "slug": clean_slug,
-                "title": canonical_url,  # Store URL as title (Backend Requirement)
+                "title": stored_url,  # Store the original/exact URL
                 "clean_title": clean_title,  # For display
                 "difficulty": "Easy"  # Force Easy
             }
@@ -94,8 +108,12 @@ class Problems(commands.Cog):
                     # Unified parsing logic using centralized functions
                     if platform == "GeeksforGeeks":
                         clean_slug = parse_gfg_slug(slug)
+                        # Store the original URL exactly as admin provided
+                        if slug.startswith("http"):
+                            title = slug  # Keep the exact URL
+                        else:
+                            title = generate_problem_url(platform, clean_slug)  # Fallback
                         slug = clean_slug
-                        title = generate_problem_url(platform, clean_slug)  # Store URL
                         difficulty = "Easy"
                     elif platform == "LeetCode":
                         slug = normalize_problem_name(slug)

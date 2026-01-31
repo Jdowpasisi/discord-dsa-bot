@@ -72,26 +72,18 @@ class UserManagementCog(commands.Cog):
                 if " " in lc_handle:
                     errors.append("LeetCode username cannot contain spaces.")
                 else:
-                    # Uniqueness check
-                    async with db.db.execute(
-                        "SELECT discord_id FROM Users WHERE leetcode_username = ? AND discord_id != ?",
-                        (lc_handle, discord_id)
-                    ) as cursor:
-                        if await cursor.fetchone():
-                            errors.append(f"LeetCode `{lc_handle}` is already linked to another user.")
+                    # Uniqueness check using new helper method
+                    if await db.check_handle_exists("leetcode_username", lc_handle, discord_id):
+                        errors.append(f"LeetCode `{lc_handle}` is already linked to another user.")
 
             # Codeforces validation
             if cf_handle:
                 if " " in cf_handle:
                     errors.append("Codeforces handle cannot contain spaces.")
                 else:
-                    # Uniqueness check
-                    async with db.db.execute(
-                        "SELECT discord_id FROM Users WHERE codeforces_handle = ? AND discord_id != ?",
-                        (cf_handle, discord_id)
-                    ) as cursor:
-                        if await cursor.fetchone():
-                            errors.append(f"Codeforces `{cf_handle}` is already linked to another user.")
+                    # Uniqueness check using new helper method
+                    if await db.check_handle_exists("codeforces_handle", cf_handle, discord_id):
+                        errors.append(f"Codeforces `{cf_handle}` is already linked to another user.")
 
             # If there are validation errors, report and exit
             if errors:
@@ -148,16 +140,8 @@ class UserManagementCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # Access the underlying aiosqlite connection (.db.db)
-            if not self.bot.db.db:
-                await self.bot.db.connect()
-
-            # Execute Deletions
-            await self.bot.db.db.execute("DELETE FROM Submissions WHERE discord_id = ?", (user.id,))
-            await self.bot.db.db.execute("DELETE FROM Users WHERE discord_id = ?", (user.id,))
-            
-            # CRITICAL: You must commit changes for deletions to happen
-            await self.bot.db.db.commit()
+            # Use the new delete_user helper method
+            await self.bot.db.delete_user(user.id)
             
             await interaction.followup.send(f"✅ User {user.name} has been reset/wiped from database.")
             
