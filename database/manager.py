@@ -38,10 +38,10 @@ class DatabaseManager:
                 # Create connection pool for better performance
                 self.pool = await asyncpg.create_pool(
                     self.database_url,
-                    min_size=2,
-                    max_size=10,
-                    command_timeout=60,
-                    timeout=30  # Connection timeout in seconds
+                    min_size=1,  # Reduced from 2 to avoid connection overhead
+                    max_size=5,  # Reduced from 10 for free tier
+                    command_timeout=10,  # Reduced from 60 to prevent long hangs
+                    timeout=15  # Reduced connection timeout
                 )
                 print(f"✓ Database connected (PostgreSQL/Supabase)")
                 return  # Success!

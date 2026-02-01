@@ -129,10 +129,13 @@ class UserManagementCog(commands.Cog):
 
         except Exception as e:
             print(f"Error in /setup: {e}")
+            import traceback
+            traceback.print_exc()
             # Try followup first, if that fails the interaction is already dead
             try:
                 await interaction.followup.send(
-                    "❌ Failed to update profile. Please try again."
+                    f"❌ Failed to update profile. Error: {type(e).__name__}\n"
+                    f"Details: {str(e)[:200]}"
                 )
             except:
                 pass  # Interaction already expired
