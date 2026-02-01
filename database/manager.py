@@ -37,13 +37,16 @@ class DatabaseManager:
                 
                 # Create connection pool for better performance
                 # Add SSL requirement for cloud deployments
+                # Disable prepared statements for pgbouncer compatibility
                 self.pool = await asyncpg.create_pool(
                     self.database_url,
                     min_size=1,  # Reduced from 2 to avoid connection overhead
                     max_size=5,  # Reduced from 10 for free tier
                     command_timeout=10,  # Reduced from 60 to prevent long hangs
                     timeout=15,  # Reduced connection timeout
-                    ssl='require'  # Force SSL for cloud connections
+                    ssl='require',  # Force SSL for cloud connections
+                    server_settings={'jit': 'off'},  # Disable JIT for stability
+                    statement_cache_size=0  # Disable prepared statements for pgbouncer
                 )
                 print(f"✓ Database connected (PostgreSQL/Supabase)")
                 return  # Success!
