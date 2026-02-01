@@ -25,19 +25,57 @@ class DatabaseManager:
         self.pool: Optional[asyncpg.Pool] = None
         
     async def connect(self) -> None:
-        """Establish database connection pool"""
-        try:
-            # Create connection pool for better performance
-            self.pool = await asyncpg.create_pool(
-                self.database_url,
-                min_size=2,
-                max_size=10,
-                command_timeout=60
-            )
-            print(f"✓ Database connected (PostgreSQL/Supabase)")
-        except Exception as e:
-            print(f"✗ Database connection failed: {e}")
-            raise
+        """Establish database connection pool with retry logic"""
+        import asyncio
+        
+        max_retries = 3
+        retry_delay = 5  # seconds
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"   Connection attempt {attempt}/{max_retries} to: {self.database_url[:30]}...")
+                
+                # Create connection pool for better performance
+                self.pool = await asyncpg.create_pool(
+                    self.database_url,
+                    min_size=2,
+                    max_size=10,
+                    command_timeout=60,
+                    timeout=30  # Connection timeout in seconds
+                )
+                print(f"✓ Database connected (PostgreSQL/Supabase)")
+                return  # Success!
+            except asyncpg.InvalidCatalogNameError as e:
+                print(f"✗ Database connection failed: Invalid database name")
+                print(f"   Check that your DATABASE_URL points to the correct database")
+                raise  # Don't retry on auth errors
+            except asyncpg.InvalidPasswordError as e:
+                print(f"✗ Database connection failed: Invalid password")
+                print(f"   Check that your password in DATABASE_URL is correct")
+                raise  # Don't retry on auth errors
+            except (TimeoutError, OSError, ConnectionRefusedError) as e:
+                print(f"✗ Connection attempt {attempt} failed: {type(e).__name__}")
+                if attempt < max_retries:
+                    print(f"   Retrying in {retry_delay} seconds... (Supabase may be waking up)")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    print(f"\n✗ All {max_retries} connection attempts failed")
+                    print(f"   Possible causes:")
+                    print(f"   1. Supabase project is paused (check dashboard)")
+                    print(f"   2. Incorrect host/port in DATABASE_URL")
+                    print(f"   3. Network/firewall blocking connection")
+                    print(f"   4. Invalid connection string format")
+                    raise
+            except Exception as e:
+                print(f"✗ Database connection failed: {e}")
+                print(f"   Error type: {type(e).__name__}")
+                if attempt < max_retries:
+                    print(f"   Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    raise
         
     async def close(self) -> None:
         """Close database connection pool"""

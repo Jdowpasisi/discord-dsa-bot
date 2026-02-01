@@ -430,8 +430,11 @@ async def main():
     
     print("\n🤖 Initializing bot...\n")
     
-    keep_alive()  # <--- ADD THIS LINE
+    # Start web server FIRST so Render marks service as "Live"
+    # This prevents deployment from hanging if database connection is slow
+    keep_alive()
     print("🌍 Web server started for Render keep-alive")
+    print("   Render should now mark this service as Live\n")
 
     bot = LeetCodeBot()
     
