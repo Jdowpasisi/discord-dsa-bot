@@ -40,12 +40,14 @@ class UserManagementCog(commands.Cog):
         Unified setup command for year level and platform handles.
         Users can update any combination of fields in a single command.
         """
+        # Defer immediately to prevent timeout
+        await interaction.response.defer(ephemeral=True)
+        
         # Check if at least one argument is provided
         if year is None and leetcode is None and codeforces is None and geeksforgeeks is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ Please provide at least one field to update.\n"
-                "**Options:** `year`, `leetcode`, `codeforces`, `geeksforgeeks`",
-                ephemeral=True
+                "**Options:** `year`, `leetcode`, `codeforces`, `geeksforgeeks`"
             )
             return
 
@@ -88,9 +90,8 @@ class UserManagementCog(commands.Cog):
             # If there are validation errors, report and exit
             if errors:
                 error_text = "\n".join(f"• {e}" for e in errors)
-                await interaction.response.send_message(
-                    f"❌ **Validation Failed:**\n{error_text}",
-                    ephemeral=True
+                await interaction.followup.send(
+                    f"❌ **Validation Failed:**\n{error_text}"
                 )
                 return
 
@@ -124,14 +125,17 @@ class UserManagementCog(commands.Cog):
             )
             embed.set_footer(text="Use /setup again to update any field")
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed)
 
         except Exception as e:
             print(f"Error in /setup: {e}")
-            await interaction.response.send_message(
-                "❌ Failed to update profile. Please try again.",
-                ephemeral=True
-            )
+            # Try followup first, if that fails the interaction is already dead
+            try:
+                await interaction.followup.send(
+                    "❌ Failed to update profile. Please try again."
+                )
+            except:
+                pass  # Interaction already expired
 
     @app_commands.command(name="reset_user", description="Admin: Delete a user from the database")
     @commands.is_owner()

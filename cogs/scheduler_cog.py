@@ -87,27 +87,101 @@ class SchedulerCog(commands.Cog):
 
         # 3. Post
         channel = discord.utils.get(self.bot.get_all_channels(), name=self.CHANNEL_NAME)
-        if channel:
-            await channel.send(embed=embed)
-        else:
+        if not channel:
             logger.error(f"Channel #{self.CHANNEL_NAME} not found.")
+            raise ValueError(f"Channel #{self.CHANNEL_NAME} not found in any server")
+        
+        # Verify it's a text channel
+        if not isinstance(channel, discord.TextChannel):
+            logger.error(f"Channel #{self.CHANNEL_NAME} is not a text channel (type: {type(channel).__name__})")
+            raise TypeError(f"Channel must be a text channel")
+        
+        # Check permissions
+        perms = channel.permissions_for(channel.guild.me)
+        logger.info(f"Bot permissions in #{self.CHANNEL_NAME}: Send Messages={perms.send_messages}, Embed Links={perms.embed_links}, View Channel={perms.view_channel}")
+        
+        missing_perms = []
+        if not perms.view_channel:
+            missing_perms.append("View Channel")
+        if not perms.send_messages:
+            missing_perms.append("Send Messages")
+        if not perms.embed_links:
+            missing_perms.append("Embed Links")
+        
+        if missing_perms:
+            error_msg = f"Missing permissions in #{self.CHANNEL_NAME}: {', '.join(missing_perms)}"
+            logger.error(error_msg)
+            raise PermissionError(error_msg)
+        
+        # Send the message
+        try:
+            await channel.send(embed=embed)
+            logger.info(f"Successfully posted to #{self.CHANNEL_NAME}")
+        except discord.errors.Forbidden as e:
+            logger.error(f"Forbidden error despite permission check: {e}. Channel ID: {channel.id}, Guild: {channel.guild.name}")
+            raise
 
     # ==================== Admin Commands ====================
 
-    # @app_commands.command(name="force_potd", description="Admin: Trigger daily job immediately (Consumes Queue)")
-    # @app_commands.checks.has_permissions(administrator=True)
-    # async def force_potd(self, interaction: discord.Interaction):
-    #     await interaction.response.defer()
+    @app_commands.command(name="check_permissions", description="Admin: Check bot permissions in #potd channel")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def check_permissions(self, interaction: discord.Interaction):
+        """Diagnostic command to check bot permissions."""
+        await interaction.response.defer(ephemeral=True)
         
-    #     # Fetch next available batch
-    #     batch = await self.db_manager.get_next_queue_batch()
+        channel = discord.utils.get(self.bot.get_all_channels(), name=self.CHANNEL_NAME)
         
-    #     if not batch:
-    #         await interaction.followup.send("⚠️ Queue is empty! No unused problems found in DB.")
-    #         return
+        if not channel:
+            await interaction.followup.send(f"❌ Channel #{self.CHANNEL_NAME} not found in any server!")
+            return
+        
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.followup.send(f"❌ #{self.CHANNEL_NAME} exists but is not a text channel (type: {type(channel).__name__})")
+            return
+        
+        perms = channel.permissions_for(channel.guild.me)
+        
+        status = [
+            f"**Server:** {channel.guild.name}",
+            f"**Channel:** #{channel.name} (ID: {channel.id})",
+            f"**Bot:** {channel.guild.me.name}",
+            f"**Bot Role:** {channel.guild.me.top_role.name}\n",
+            f"**Permissions:**",
+            f"✅ View Channel" if perms.view_channel else "❌ View Channel",
+            f"✅ Send Messages" if perms.send_messages else "❌ Send Messages",
+            f"✅ Embed Links" if perms.embed_links else "❌ Embed Links",
+            f"✅ Read Message History" if perms.read_message_history else "❌ Read Message History",
+        ]
+        
+        all_good = perms.view_channel and perms.send_messages and perms.embed_links
+        
+        if all_good:
+            status.append("\n✅ **All required permissions are granted!**")
+        else:
+            status.append("\n⚠️ **Missing required permissions! Fix these in channel settings.**")
+        
+        await interaction.followup.send("\n".join(status))
+    
+    @app_commands.command(name="force_potd", description="Admin: Trigger daily job immediately (Consumes Queue)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def force_potd(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        
+        # Fetch next available batch
+        batch = await self.db_manager.get_next_queue_batch()
+        
+        if not batch:
+            await interaction.followup.send("⚠️ Queue is empty! No unused problems found in DB.")
+            return
 
-    #     await self._post_daily_batch(batch)
-    #     await interaction.followup.send("✅ Daily job triggered successfully.")
+        try:
+            await self._post_daily_batch(batch)
+            await interaction.followup.send("✅ Daily job triggered successfully.")
+        except discord.errors.Forbidden as e:
+            await interaction.followup.send(f"❌ Permission error: {e}\n\nUse `/check_permissions` to diagnose the issue.")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}")
+            raise
 
     # # Note: 'remove_potd' removed from here because it exists in cogs/problems.py
 
