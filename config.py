@@ -13,14 +13,15 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
 BOT_DESCRIPTION = "A Discord bot for tracking LeetCode problem submissions and maintaining leaderboards"
 
-# Database Configuration
-# For Supabase: Set DATABASE_URL in .env (PostgreSQL connection string)
-# For local SQLite: Set DATABASE_PATH in .env
-DATABASE_URL = os.getenv("DATABASE_URL")  # Supabase PostgreSQL URL
-DATABASE_PATH = os.getenv("DATABASE_PATH", "data/leetcode_bot.db")  # Fallback for local SQLite
+# Database Configuration - PostgreSQL/Supabase Only
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Determine which database to use
-USE_SUPABASE = DATABASE_URL is not None and DATABASE_URL.startswith("postgresql")
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL environment variable is required.\\n"
+        "Format: postgresql://user:password@host:port/database\\n"
+        "Get this from your Supabase project settings."
+    )
 
 # Points System (No negative points ever)
 POINTS = {

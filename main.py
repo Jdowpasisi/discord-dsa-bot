@@ -8,7 +8,7 @@ Features:
 - Weekly and monthly leaderboards
 - Statistics dashboard
 - Comprehensive error handling
-- Extensible database design
+- PostgreSQL/Supabase database for scalability
 
 Usage:
     python main.py
@@ -16,14 +16,13 @@ Usage:
 Requirements:
     - Python 3.8+
     - discord.py 2.3.0+
-    - aiosqlite 0.19.0+
+    - asyncpg 0.29.0+
     - python-dotenv 1.0.0+
     - aiohttp 3.8.0+ (for LeetCode API)
 
 Environment Variables:
     DISCORD_TOKEN - Your Discord bot token (required)
-    DATABASE_URL - PostgreSQL connection URL for Supabase (recommended for deployment)
-    DATABASE_PATH - Path to SQLite database (fallback for local development)
+    DATABASE_URL - PostgreSQL connection URL from Supabase (required)
 """
 
 from keep_alive import keep_alive
@@ -36,17 +35,12 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-# Import the appropriate database manager based on config
+# Import configuration and database manager
 import config
-
-if config.USE_SUPABASE:
-    from database.manager_supabase import DatabaseManager
-    print("📦 Using Supabase/PostgreSQL database")
-else:
-    from database.manager import DatabaseManager
-    print("📦 Using local SQLite database")
-
+from database import DatabaseManager
 from utils.leetcode_api import close_leetcode_api
+
+print("📦 Using PostgreSQL/Supabase database")
 
 
 class LeetCodeBot(commands.Bot):
@@ -63,12 +57,11 @@ class LeetCodeBot(commands.Bot):
             intents=intents
         )
         
-        # Initialize the appropriate database manager
-        if config.USE_SUPABASE:
-            self.db = DatabaseManager(config.DATABASE_URL)
-        else:
-            self.db = DatabaseManager(config.DATABASE_PATH)
+        # Initialize PostgreSQL database manager
+        if not config.DATABASE_URL:
+            raise ValueError("DATABASE_URL environment variable is required")
         
+        self.db = DatabaseManager(config.DATABASE_URL)
         self.start_time = datetime.now()
     
     async def is_owner(self, user: discord.User) -> bool:
