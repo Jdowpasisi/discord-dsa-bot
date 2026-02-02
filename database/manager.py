@@ -5,9 +5,12 @@ Handles database connections, initialization, and common queries using asyncpg
 
 import asyncpg
 import os
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
@@ -546,6 +549,17 @@ class DatabaseManager:
                    WHERE problem_slug = $2 AND platform = $3""",
                 potd_date, problem_slug, platform
             )
+
+    async def clear_old_potd(self, current_date: str) -> None:
+        """Clear POTD status from problems that are not from today"""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """UPDATE Problems 
+                   SET is_potd = 0, potd_date = NULL 
+                   WHERE is_potd = 1 AND (potd_date IS NULL OR potd_date < $1)""",
+                current_date
+            )
+            logger.info(f"Cleared old POTDs: {result}")
 
     async def unset_potd(self, problem_slug: str, platform: str) -> None:
         """Remove POTD status from a problem"""

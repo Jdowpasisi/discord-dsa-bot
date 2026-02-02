@@ -79,11 +79,6 @@ class SchedulerCog(commands.Cog):
                 value=f"**{p['title']}**\n[Solve Here]({safe_url})",
                 inline=False
             )
-        
-        # Add Queue Stats to Footer
-        q_status = await self.db_manager.get_queue_status()
-        footer_text = f"Queue: Y1:{q_status.get('1',0)} | Y2:{q_status.get('2',0)} | Y3:{q_status.get('3',0)}"
-        embed.set_footer(text=footer_text)
 
         # 3. Post
         channel = discord.utils.get(self.bot.get_all_channels(), name=self.CHANNEL_NAME)
@@ -193,8 +188,10 @@ class SchedulerCog(commands.Cog):
         logger.info("Running daily DB queue task...")
         
         try:
-            # 1. Check if POTD already set for today?
-            # For now, we assume if the task runs, we post.
+            # 1. Clear old POTDs (from previous days)
+            today_str = datetime.now().date().isoformat()
+            await self.db_manager.clear_old_potd(today_str)
+            logger.info(f"Cleared old POTDs before {today_str}")
             
             # 2. Fetch and Post
             batch = await self.db_manager.get_next_queue_batch()

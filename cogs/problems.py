@@ -318,9 +318,11 @@ class Problems(commands.Cog):
         """Removes POTD status from all active POTDs"""
         await interaction.response.defer(ephemeral=True)
         try:
-            cursor = await self.bot.db.db.execute("UPDATE Problems SET is_potd = 0, potd_date = NULL WHERE is_potd = 1")
-            await self.bot.db.db.commit()
-            count = cursor.rowcount
+            async with self.bot.db.pool.acquire() as conn:
+                result = await conn.execute("UPDATE Problems SET is_potd = 0, potd_date = NULL WHERE is_potd = 1")
+                # Extract number of affected rows from result string like "UPDATE 5"
+                count = int(result.split()[-1]) if result else 0
+            
             if count > 0:
                 await interaction.followup.send(embed=discord.Embed(title="✅ POTD Cleared", description=f"Removed POTD status from **{count}** problems.", color=config.COLOR_SUCCESS))
             else:

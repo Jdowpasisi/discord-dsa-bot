@@ -72,14 +72,14 @@ class StatsCog(commands.Cog):
     async def _get_user_rank(self, discord_id: int) -> Optional[int]:
         """Get user's rank based on total points."""
         try:
-            async with self.db_manager.db.execute(
-                """
-                SELECT discord_id, 
-                       ROW_NUMBER() OVER (ORDER BY total_points DESC) as rank
-                FROM Users
-                """
-            ) as cursor:
-                rows = await cursor.fetchall()
+            async with self.db_manager.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT discord_id, 
+                           ROW_NUMBER() OVER (ORDER BY total_points DESC) as rank
+                    FROM Users
+                    """
+                )
                 
                 for row in rows:
                     if row[0] == discord_id:
@@ -98,25 +98,25 @@ class StatsCog(commands.Cog):
         monday, sunday = self._get_week_range()
         
         try:
-            async with self.db_manager.db.execute(
-                """
-                SELECT 
-                    u.discord_id,
-                    u.total_points,
-                    u.daily_streak,
-                    u.weekly_streak,
-                    COALESCE(SUM(s.points_awarded), 0) as weekly_points,
-                    COUNT(s.submission_id) as weekly_submissions
-                FROM Users u
-                LEFT JOIN Submissions s 
-                    ON u.discord_id = s.discord_id 
-                    AND s.submission_date BETWEEN ? AND ?
-                GROUP BY u.discord_id
-                ORDER BY weekly_points DESC, u.total_points DESC
-                """,
-                (monday.isoformat(), sunday.isoformat())
-            ) as cursor:
-                rows = await cursor.fetchall()
+            async with self.db_manager.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT 
+                        u.discord_id,
+                        u.total_points,
+                        u.daily_streak,
+                        u.weekly_streak,
+                        COALESCE(SUM(s.points_awarded), 0) as weekly_points,
+                        COUNT(s.submission_id) as weekly_submissions
+                    FROM Users u
+                    LEFT JOIN Submissions s 
+                        ON u.discord_id = s.discord_id 
+                        AND s.submission_date BETWEEN $1 AND $2
+                    GROUP BY u.discord_id
+                    ORDER BY weekly_points DESC, u.total_points DESC
+                    """,
+                    monday.isoformat(), sunday.isoformat()
+                )
                 
                 leaderboard = []
                 for row in rows:
@@ -142,25 +142,25 @@ class StatsCog(commands.Cog):
         first_day, last_day = self._get_month_range()
         
         try:
-            async with self.db_manager.db.execute(
-                """
-                SELECT 
-                    u.discord_id,
-                    u.total_points,
-                    u.daily_streak,
-                    u.weekly_streak,
-                    COALESCE(SUM(s.points_awarded), 0) as monthly_points,
-                    COUNT(s.submission_id) as monthly_submissions
-                FROM Users u
-                LEFT JOIN Submissions s 
-                    ON u.discord_id = s.discord_id 
-                    AND s.submission_date BETWEEN ? AND ?
-                GROUP BY u.discord_id
-                ORDER BY monthly_points DESC, u.total_points DESC
-                """,
-                (first_day.isoformat(), last_day.isoformat())
-            ) as cursor:
-                rows = await cursor.fetchall()
+            async with self.db_manager.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT 
+                        u.discord_id,
+                        u.total_points,
+                        u.daily_streak,
+                        u.weekly_streak,
+                        COALESCE(SUM(s.points_awarded), 0) as monthly_points,
+                        COUNT(s.submission_id) as monthly_submissions
+                    FROM Users u
+                    LEFT JOIN Submissions s 
+                        ON u.discord_id = s.discord_id 
+                        AND s.submission_date BETWEEN $1 AND $2
+                    GROUP BY u.discord_id
+                    ORDER BY monthly_points DESC, u.total_points DESC
+                    """,
+                    first_day.isoformat(), last_day.isoformat()
+                )
                 
                 leaderboard = []
                 for row in rows:
@@ -231,22 +231,25 @@ class StatsCog(commands.Cog):
         
         # Last Submission
         last_submission = stats.get('last_submission_date')
-        if last_submission:
+        if last_submission and last_submission not in (None, '', 'None'):
             try:
                 if isinstance(last_submission, str):
-                    last_date = datetime.fromisoformat(last_submission)
+                    last_date = datetime.fromisoformat(last_submission).date()
                 else:
-                    last_date = last_submission
+                    last_date = last_submission.date() if hasattr(last_submission, 'date') else last_submission
                 
-                days_ago = (datetime.now() - last_date).days
+                today = datetime.now().date()
+                days_ago = (today - last_date).days
+                
                 if days_ago == 0:
                     last_sub_text = "Today! 🎯"
                 elif days_ago == 1:
                     last_sub_text = "Yesterday"
                 else:
                     last_sub_text = f"{days_ago} days ago"
-            except:
-                last_sub_text = "Unknown"
+            except Exception as e:
+                logger.warning(f"Failed to parse last_submission_date '{last_submission}': {e}")
+                last_sub_text = "Never"
         else:
             last_sub_text = "Never"
         
@@ -387,7 +390,7 @@ class StatsCog(commands.Cog):
             interaction: Discord interaction
             user: Optional user to view (defaults to command user)
         """
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         
         target_user = user or interaction.user
         discord_id = target_user.id
@@ -405,7 +408,8 @@ class StatsCog(commands.Cog):
                             f"Use `/submit` to get started!"
                         ),
                         color=config.COLOR_ERROR
-                    )
+                    ),
+                    ephemeral=True
                 )
                 return
             
@@ -414,7 +418,7 @@ class StatsCog(commands.Cog):
             
             # Create and send embed
             embed = self._create_stats_embed(target_user, user_data, rank)
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             
         except Exception as e:
             logger.error(f"Error in stats command: {e}", exc_info=True)
@@ -593,23 +597,23 @@ class StatsCog(commands.Cog):
             # Query database for previous month
             leaderboard_data = []
             try:
-                async with self.db_manager.db.execute(
-                    """
-                    SELECT 
-                        u.discord_id,
-                        u.total_points,
-                        COALESCE(SUM(s.points_awarded), 0) as monthly_points,
-                        COUNT(s.submission_id) as monthly_submissions
-                    FROM Users u
-                    LEFT JOIN Submissions s 
-                        ON u.discord_id = s.discord_id 
-                        AND s.submission_date BETWEEN ? AND ?
-                    GROUP BY u.discord_id
-                    ORDER BY monthly_points DESC, u.total_points DESC
-                    """,
-                    (first_day.isoformat(), last_day.isoformat())
-                ) as cursor:
-                    rows = await cursor.fetchall()
+                async with self.db_manager.pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        SELECT 
+                            u.discord_id,
+                            u.total_points,
+                            COALESCE(SUM(s.points_awarded), 0) as monthly_points,
+                            COUNT(s.submission_id) as monthly_submissions
+                        FROM Users u
+                        LEFT JOIN Submissions s 
+                            ON u.discord_id = s.discord_id 
+                            AND s.submission_date BETWEEN $1 AND $2
+                        GROUP BY u.discord_id
+                        ORDER BY monthly_points DESC, u.total_points DESC
+                        """,
+                        first_day.isoformat(), last_day.isoformat()
+                    )
                     
                     for row in rows:
                         leaderboard_data.append({
