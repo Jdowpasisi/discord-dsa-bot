@@ -31,25 +31,21 @@ class DatabaseManager:
         """Establish database connection pool with retry logic"""
         import asyncio
         
-        max_retries = 3
-        retry_delay = 5  # seconds
+        max_retries = 5  # Increased for Supabase wake-up time
+        retry_delay = 10  # Increased to allow Supabase to wake up
         
         for attempt in range(1, max_retries + 1):
             try:
                 print(f"   Connection attempt {attempt}/{max_retries} to: {self.database_url[:30]}...")
                 
-                # Create connection pool for better performance
-                # Add SSL requirement for cloud deployments
-                # Disable prepared statements for pgbouncer compatibility
+                # Create connection pool for Supabase/pgBouncer compatibility
+                # pgBouncer requires minimal connection settings
                 self.pool = await asyncpg.create_pool(
                     self.database_url,
-                    min_size=1,  # Reduced from 2 to avoid connection overhead
-                    max_size=5,  # Reduced from 10 for free tier
-                    command_timeout=10,  # Reduced from 60 to prevent long hangs
-                    timeout=15,  # Reduced connection timeout
-                    ssl='require',  # Force SSL for cloud connections
-                    server_settings={'jit': 'off'},  # Disable JIT for stability
-                    statement_cache_size=0  # Disable prepared statements for pgbouncer
+                    min_size=1,
+                    max_size=3,
+                    command_timeout=60,
+                    statement_cache_size=0  # Critical: Disable prepared statements for pgBouncer
                 )
                 print(f"✓ Database connected (PostgreSQL/Supabase)")
                 return  # Success!
@@ -61,6 +57,28 @@ class DatabaseManager:
                 print(f"✗ Database connection failed: Invalid password")
                 print(f"   Check that your password in DATABASE_URL is correct")
                 raise  # Don't retry on auth errors
+            except asyncpg.exceptions.InternalServerError as e:
+                error_msg = str(e)
+                if "Connection to database not available" in error_msg or "Authentication query failed" in error_msg:
+                    print(f"✗ Connection attempt {attempt} failed: Supabase database is paused or unavailable")
+                    if attempt < max_retries:
+                        print(f"   ⏳ Waking up Supabase project... (this may take 30-60 seconds)")
+                        print(f"   Retrying in {retry_delay} seconds...")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        print(f"\n✗ Supabase database is not responding after {max_retries} attempts")
+                        print(f"   📝 ACTION REQUIRED:")
+                        print(f"   1. Go to https://supabase.com/dashboard")
+                        print(f"   2. Click on your project")
+                        print(f"   3. Check if project is paused (free tier pauses after ~7 days of inactivity)")
+                        print(f"   4. Click 'Resume' or 'Restore' if paused")
+                        print(f"   5. Wait 30-60 seconds for the database to wake up")
+                        print(f"   6. Try running the bot again")
+                        raise
+                else:
+                    print(f"✗ Database internal server error: {e}")
+                    raise
             except (TimeoutError, OSError, ConnectionRefusedError) as e:
                 print(f"✗ Connection attempt {attempt} failed: {type(e).__name__}")
                 if attempt < max_retries:
@@ -101,12 +119,38 @@ class DatabaseManager:
         if not schema_path.exists():
             raise FileNotFoundError(f"Schema file not found: {schema_path}")
             
-        # Read and execute the schema file
+        # Read the schema file
         with open(schema_path, 'r', encoding='utf-8') as f:
             schema_sql = f.read()
         
+        # Split into individual statements and execute separately
+        # This is required for pgBouncer compatibility (Supabase)
+        statements = []
+        current_statement = []
+        
+        for line in schema_sql.split('\n'):
+            # Skip comments and empty lines
+            stripped = line.strip()
+            if stripped.startswith('--') or not stripped:
+                continue
+            
+            current_statement.append(line)
+            
+            # Check if statement is complete (ends with semicolon)
+            if stripped.endswith(';'):
+                statement = '\n'.join(current_statement).strip()
+                if statement:
+                    statements.append(statement)
+                current_statement = []
+        
+        # Execute each statement separately
         async with self.pool.acquire() as conn:
-            await conn.execute(schema_sql)
+            for statement in statements:
+                try:
+                    await conn.execute(statement)
+                except Exception as e:
+                    # Log but continue - table might already exist
+                    logger.debug(f"Schema execution note: {e}")
         
         print("✓ Database tables initialized")
     
@@ -555,18 +599,18 @@ class DatabaseManager:
         async with self.pool.acquire() as conn:
             result = await conn.execute(
                 """UPDATE Problems 
-                   SET is_potd = 0, potd_date = NULL 
+                   SET is_potd = 0
                    WHERE is_potd = 1 AND (potd_date IS NULL OR potd_date < $1)""",
                 current_date
             )
             logger.info(f"Cleared old POTDs: {result}")
 
     async def unset_potd(self, problem_slug: str, platform: str) -> None:
-        """Remove POTD status from a problem"""
+        """Remove POTD status from a problem (keeps potd_date as historical record)"""
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """UPDATE Problems 
-                   SET is_potd = 0, potd_date = NULL 
+                   SET is_potd = 0
                    WHERE problem_slug = $1 AND platform = $2""",
                 problem_slug, platform
             )

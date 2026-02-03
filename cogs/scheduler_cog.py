@@ -93,7 +93,7 @@ class SchedulerCog(commands.Cog):
         
         # Check permissions
         perms = channel.permissions_for(channel.guild.me)
-        logger.info(f"Bot permissions in #{self.CHANNEL_NAME}: Send Messages={perms.send_messages}, Embed Links={perms.embed_links}, View Channel={perms.view_channel}")
+        logger.info(f"Bot permissions in #{self.CHANNEL_NAME}: Send Messages={perms.send_messages}, Embed Links={perms.embed_links}, View Channel={perms.view_channel}, Manage Messages={perms.manage_messages}")
         
         missing_perms = []
         if not perms.view_channel:
@@ -102,6 +102,8 @@ class SchedulerCog(commands.Cog):
             missing_perms.append("Send Messages")
         if not perms.embed_links:
             missing_perms.append("Embed Links")
+        if not perms.manage_messages:
+            missing_perms.append("Manage Messages")
         
         if missing_perms:
             error_msg = f"Missing permissions in #{self.CHANNEL_NAME}: {', '.join(missing_perms)}"
@@ -110,8 +112,24 @@ class SchedulerCog(commands.Cog):
         
         # Send the message
         try:
-            await channel.send(embed=embed)
+            message = await channel.send(embed=embed)
             logger.info(f"Successfully posted to #{self.CHANNEL_NAME}")
+            
+            # Pin the POTD message
+            await message.pin()
+            logger.info(f"Successfully pinned POTD message (ID: {message.id})")
+            
+            # Optional: Unpin old POTD messages to keep only the latest one pinned
+            # This removes the "X pinned a message" system notification
+            pins = await channel.pins()
+            for pin in pins:
+                # Unpin old POTD messages (skip the one we just pinned)
+                if pin.id != message.id and pin.author.id == self.bot.user.id and pin.embeds:
+                    # Check if it's a POTD message
+                    if pin.embeds[0].title and "Problem of the Day" in pin.embeds[0].title:
+                        await pin.unpin()
+                        logger.info(f"Unpinned old POTD message (ID: {pin.id})")
+            
         except discord.errors.Forbidden as e:
             logger.error(f"Forbidden error despite permission check: {e}. Channel ID: {channel.id}, Guild: {channel.guild.name}")
             raise
@@ -146,9 +164,10 @@ class SchedulerCog(commands.Cog):
             f"✅ Send Messages" if perms.send_messages else "❌ Send Messages",
             f"✅ Embed Links" if perms.embed_links else "❌ Embed Links",
             f"✅ Read Message History" if perms.read_message_history else "❌ Read Message History",
+            f"✅ Manage Messages" if perms.manage_messages else "❌ Manage Messages",
         ]
         
-        all_good = perms.view_channel and perms.send_messages and perms.embed_links
+        all_good = perms.view_channel and perms.send_messages and perms.embed_links and perms.manage_messages
         
         if all_good:
             status.append("\n✅ **All required permissions are granted!**")

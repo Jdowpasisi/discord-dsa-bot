@@ -125,14 +125,11 @@ class SubmissionCog(commands.Cog):
             is_potd = False
             
             if existing_problem:
-                # Check 1: Is the 'is_potd' flag explicitly set to 1?
-                if existing_problem.get("is_potd") == 1:
+                # Check 1: Is the 'is_potd' flag set to 1 AND potd_date matches today?
+                if existing_problem.get("is_potd") == 1 and existing_problem.get("potd_date") == today_str:
                     is_potd = True
                 
-                # Check 2 (Fallback): Does the date match today?
-                # We check BOTH 'potd_date' (new) and 'date_posted' (old) just in case
-                elif existing_problem.get("potd_date") == today_str:
-                    is_potd = True
+                # Check 2 (Fallback): Does the date_posted match today (legacy support)?
                 elif existing_problem.get("date_posted") == today_str:
                     is_potd = True
             
