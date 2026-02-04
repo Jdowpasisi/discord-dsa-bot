@@ -31,7 +31,18 @@ class SchedulerCog(commands.Cog):
         
         # Start the midnight job
         self.daily_problem_post.start()
-        logger.info("SchedulerCog (DB Queue Mode) initialized")
+        logger.info("="*60)
+        logger.info("✅ SchedulerCog (DB Queue Mode) initialized")
+        logger.info(f"Scheduler task started: {self.daily_problem_post.is_running()}")
+        logger.info(f"Scheduled time: 12:00 AM IST (00:00 IST)")
+        logger.info(f"Current time (IST): {datetime.now(IST).strftime('%Y-%m-%d %I:%M:%S %p')}")
+        logger.info(f"Current time (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d %I:%M:%S %p')}")
+        logger.info("="*60)
+        logger.info(f"Scheduler task started: {self.daily_problem_post.is_running()}")
+        logger.info(f"Scheduled time: 12:00 AM IST (00:00 IST)")
+        logger.info(f"Current time (IST): {datetime.now(IST).strftime('%Y-%m-%d %I:%M:%S %p')}")
+        logger.info(f"Current time (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d %I:%M:%S %p')}")
+        logger.info("="*60)
     
     def cog_unload(self):
         self.daily_problem_post.cancel()
@@ -196,6 +207,102 @@ class SchedulerCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}")
             raise
+    
+    @app_commands.command(name="preview_potd", description="Admin: Preview what would be posted next (doesn't update DB)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def preview_potd(self, interaction: discord.Interaction):
+        """Preview the next POTD batch without consuming it or updating the database"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # Fetch next available batch
+            batch = await self.db_manager.get_next_queue_batch()
+            
+            if not batch:
+                await interaction.followup.send("⚠️ Queue is empty! No unused problems found in DB.")
+                return
+            
+            # Create preview embed
+            embed = discord.Embed(
+                title="📋 Next POTD Preview (Test)",
+                description="This is what would be posted next. Database will NOT be updated.",
+                color=discord.Color.orange(),
+                timestamp=datetime.now()
+            )
+            
+            sorted_years = sorted(batch.keys())
+            
+            for year in sorted_years:
+                p = batch[year]
+                safe_url = generate_problem_url(p['platform'], p['slug'])
+                difficulty = p.get('difficulty', 'Medium')
+                
+                embed.add_field(
+                    name=f"🔹 Year {year} ({difficulty}) - {p['platform']}",
+                    value=f"**{p['title']}**\n[Solve Here]({safe_url})",
+                    inline=False
+                )
+            
+            embed.set_footer(text="Use /force_potd to post this batch and mark as POTD")
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}")
+            raise
+    
+    @app_commands.command(name="scheduler_status", description="Admin: Check if the scheduler is running")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def scheduler_status(self, interaction: discord.Interaction):
+        """Check the status of the daily scheduler"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            is_running = self.daily_problem_post.is_running()
+            next_iteration = self.daily_problem_post.next_iteration
+            
+            embed = discord.Embed(
+                title="📅 Scheduler Status",
+                color=discord.Color.green() if is_running else discord.Color.red(),
+                timestamp=datetime.now()
+            )
+            
+            embed.add_field(
+                name="Status",
+                value="✅ Running" if is_running else "❌ Not Running",
+                inline=False
+            )
+            
+            if next_iteration:
+                # Convert next_iteration to IST
+                next_run_ist = next_iteration.astimezone(IST)
+                embed.add_field(
+                    name="Next Run (IST)",
+                    value=f"{next_run_ist.strftime('%Y-%m-%d %I:%M:%S %p')}",
+                    inline=False
+                )
+                
+                # Time until next run
+                time_until = next_iteration - datetime.now(timezone.utc)
+                hours, remainder = divmod(int(time_until.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                embed.add_field(
+                    name="Time Until Next Run",
+                    value=f"{hours}h {minutes}m {seconds}s",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="Scheduled Time",
+                value="12:00 AM IST (Daily)",
+                inline=False
+            )
+            
+            embed.set_footer(text="Use /preview_potd to see what will be posted next")
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}")
+            raise
 
     # # Note: 'remove_potd' removed from here because it exists in cogs/problems.py
 
@@ -204,29 +311,55 @@ class SchedulerCog(commands.Cog):
     @tasks.loop(time=time(hour=0, minute=0, tzinfo=IST))
     async def daily_problem_post(self):
         """Runs automatically at midnight IST."""
-        logger.info("Running daily DB queue task...")
+        logger.info("="*60)
+        logger.info("🔔 SCHEDULER TRIGGERED: Running daily DB queue task...")
+        logger.info(f"Current time (UTC): {datetime.now(timezone.utc)}")
+        logger.info(f"Current time (IST): {datetime.now(IST)}")
+        logger.info("="*60)
         
         try:
             # 1. Clear old POTDs (from previous days)
             today_str = datetime.now().date().isoformat()
+            logger.info(f"Clearing old POTDs before {today_str}...")
             await self.db_manager.clear_old_potd(today_str)
-            logger.info(f"Cleared old POTDs before {today_str}")
+            logger.info(f"✅ Cleared old POTDs before {today_str}")
             
             # 2. Fetch and Post
+            logger.info("Fetching next queue batch...")
             batch = await self.db_manager.get_next_queue_batch()
             
             if batch:
+                logger.info(f"✅ Fetched batch with {len(batch)} problems")
                 await self._post_daily_batch(batch)
+                logger.info("✅ Daily POTD posted successfully!")
             else:
-                logger.error("Daily task failed: Queue is empty!")
+                logger.error("❌ Daily task failed: Queue is empty!")
                 
         except Exception as e:
-            logger.error(f"Critical error in daily task: {e}", exc_info=True)
+            logger.error(f"❌ Critical error in daily task: {e}", exc_info=True)
 
     @daily_problem_post.before_loop
     async def before_daily_post(self):
+        logger.info("⏳ Scheduler waiting for bot to be ready...")
         await self.bot.wait_until_ready()
+        logger.info("✅ Bot is ready! Scheduler will run at next scheduled time.")
+        next_run = self.daily_problem_post.next_iteration
+        if next_run:
+            next_run_ist = next_run.astimezone(IST)
+            logger.info(f"📅 Next scheduled run: {next_run_ist.strftime('%Y-%m-%d %I:%M:%S %p IST')}")
+        else:
+            logger.warning("⚠️ Next iteration time not available yet")
+    
+    @daily_problem_post.error
+    async def daily_problem_post_error(self, error: Exception):
+        """Handle errors in the scheduler task"""
+        logger.error("="*60)
+        logger.error("❌ SCHEDULER ERROR OCCURRED")
+        logger.error(f"Error type: {type(error).__name__}")
+        logger.error(f"Error message: {error}")
+        logger.error("="*60, exc_info=True)
+        # Don't stop the scheduler - let it retry next time
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(SchedulerCog(bot))
-    logger.info("SchedulerCog (DB Queue) loaded")
+    logger.info("✅ SchedulerCog (DB Queue) loaded successfully")

@@ -171,11 +171,8 @@ class Problems(commands.Cog):
         
         try:
             today_str = datetime.now().date().isoformat()
-            potd_problems = []
-            
-            for platform in ["LeetCode", "Codeforces", "GeeksforGeeks"]:
-                rows = await self.bot.db.get_potd_for_date(today_str, platform)
-                potd_problems.extend(rows)
+            # Fetch all POTD problems for today (no platform filter)
+            potd_problems = await self.bot.db.get_potd_for_date(today_str)
             
             if not potd_problems:
                 await interaction.followup.send("🌟 No POTD set for today. Check back later!")
@@ -215,6 +212,57 @@ class Problems(commands.Cog):
             
         except Exception as e:
             print(f"Error in potd: {e}")
+            await interaction.followup.send("❌ Failed to retrieve daily problems.")
+
+    @app_commands.command(name="check_potd", description="Admin: Check today's POTD (if set)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def check_daily_problem(self, interaction: discord.Interaction):
+        """Admin command to check today's problem"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            today_str = datetime.now().date().isoformat()
+            # Fetch all POTD problems for today (no platform filter)
+            potd_problems = await self.bot.db.get_potd_for_date(today_str)
+            
+            if not potd_problems:
+                await interaction.followup.send("🌟 No POTD set for today. Check back later!")
+                return
+            
+            embed = discord.Embed(
+                title="🏆 Today's Problem of the Day",
+                description=f"**Date:** {datetime.now().strftime('%B %d, %Y')}",
+                color=config.COLOR_PRIMARY,
+                timestamp=datetime.now()
+            )
+            
+            for problem in potd_problems:
+                platform = problem['platform']
+                
+                if platform == "GeeksforGeeks":
+                    # Use centralized GFG parsing
+                    clean_slug = parse_gfg_slug(problem['problem_title'])  # title is URL
+                    display_title = generate_gfg_title(clean_slug)
+                    url = problem['problem_title']
+                    # GFG Style: Clean Title, No Difficulty displayed
+                    field_name = f"Year {problem.get('academic_year', '?')} : {platform}"
+                else:
+                    display_title = problem['problem_title']
+                    url = generate_problem_url(platform, problem['problem_slug'])
+                    # Standard Style
+                    field_name = f"Year {problem.get('academic_year', '?')} ({problem['difficulty']}) : {platform}"
+                
+                embed.add_field(
+                    name=field_name,
+                    value=f"**{display_title}**\n[Solve Here]({url})",
+                    inline=False
+                )
+            
+            embed.set_footer(text="Submit with /submit to earn points!")
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Error in check_potd: {e}")
             await interaction.followup.send("❌ Failed to retrieve daily problems.")
 
     # ==================================================================
