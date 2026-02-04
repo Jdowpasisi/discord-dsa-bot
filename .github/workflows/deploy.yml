@@ -1,0 +1,33 @@
+name: Deploy Bot to Azure
+
+on:
+  push:
+    branches: [ main ]  # Runs whenever you push to main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Connect and Deploy
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        port: 22
+        script: |
+          # 1. Go to the folder
+          cd ~/discord-dsa-bot
+          
+          # 2. Get latest code
+          git pull origin main
+          
+          # 3. Update dependencies
+          source venv/bin/activate
+          pip install -r requirements.txt
+          
+          # 4. Optional: Run DB Migrations (Uncomment if needed)
+          # python migrate_year_column.py
+          
+          # 5. Restart the bot (Password-less due to step 1)
+          sudo systemctl restart discord-dsa-bot.service
