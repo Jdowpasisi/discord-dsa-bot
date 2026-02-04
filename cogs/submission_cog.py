@@ -62,7 +62,7 @@ class SubmissionCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         try:
             # 2. Setup
