@@ -11,7 +11,7 @@ This cog handles:
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Literal, Optional, List, Tuple
 import logging
 import calendar
@@ -20,6 +20,9 @@ from database.manager import DatabaseManager
 import config
 
 logger = logging.getLogger(__name__)
+
+# Define IST Timezone (UTC + 5:30) - consistent with scheduler_cog.py
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class StatsCog(commands.Cog):
@@ -238,7 +241,7 @@ class StatsCog(commands.Cog):
                 else:
                     last_date = last_submission.date() if hasattr(last_submission, 'date') else last_submission
                 
-                today = datetime.now().date()
+                today = datetime.now(IST).date()
                 days_ago = (today - last_date).days
                 
                 if days_ago == 0:

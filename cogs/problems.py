@@ -6,8 +6,11 @@ PLATFORM-AWARE: All problem operations now include platform context
 import discord
 from discord.ext import commands
 from discord import app_commands
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import config
+
+# Define IST Timezone (UTC + 5:30) - consistent with scheduler_cog.py
+IST = timezone(timedelta(hours=5, minutes=30))
 import json
 from utils.logic import (
     normalize_problem_name,
@@ -170,7 +173,7 @@ class Problems(commands.Cog):
         await interaction.response.defer()
         
         try:
-            today_str = datetime.now().date().isoformat()
+            today_str = datetime.now(IST).date().isoformat()
             # Fetch all POTD problems for today (no platform filter)
             potd_problems = await self.bot.db.get_potd_for_date(today_str)
             
@@ -180,9 +183,9 @@ class Problems(commands.Cog):
             
             embed = discord.Embed(
                 title="🏆 Today's Problem of the Day",
-                description=f"**Date:** {datetime.now().strftime('%B %d, %Y')}",
+                description=f"**Date:** {datetime.now(IST).strftime('%B %d, %Y')}",
                 color=config.COLOR_PRIMARY,
-                timestamp=datetime.now()
+                timestamp=datetime.now(IST)
             )
             
             for problem in potd_problems:
@@ -221,7 +224,7 @@ class Problems(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            today_str = datetime.now().date().isoformat()
+            today_str = datetime.now(IST).date().isoformat()
             # Fetch all POTD problems for today (no platform filter)
             potd_problems = await self.bot.db.get_potd_for_date(today_str)
             
@@ -231,9 +234,9 @@ class Problems(commands.Cog):
             
             embed = discord.Embed(
                 title="🏆 Today's Problem of the Day",
-                description=f"**Date:** {datetime.now().strftime('%B %d, %Y')}",
+                description=f"**Date:** {datetime.now(IST).strftime('%B %d, %Y')}",
                 color=config.COLOR_PRIMARY,
-                timestamp=datetime.now()
+                timestamp=datetime.now(IST)
             )
             
             for problem in potd_problems:
@@ -307,7 +310,7 @@ class Problems(commands.Cog):
         final_title = meta["title"] # URL for GFG, Title for others
         final_difficulty = meta.get("difficulty", "Medium") # Easy for GFG
         
-        today = datetime.now().date().isoformat()
+        today = datetime.now(IST).date().isoformat()
 
         # 2. Upsert (Create or Update)
         await self.bot.db.create_problem(

@@ -5,7 +5,11 @@ Leaderboard Cog - Display rankings and statistics
 import discord 
 from discord import app_commands
 from discord.ext import commands
+from datetime import datetime, timedelta, timezone
 import config
+
+# Define IST Timezone (UTC + 5:30) - consistent with scheduler_cog.py
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class Leaderboard(commands.Cog):
@@ -58,7 +62,7 @@ class Leaderboard(commands.Cog):
         year_filter = year.value if year else None
         
         # Calculate date range based on period
-        now = datetime.now()
+        now = datetime.now(IST)
         start_date, end_date = None, None
         
         if period_filter == "weekly":

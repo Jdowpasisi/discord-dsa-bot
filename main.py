@@ -111,13 +111,13 @@ class LeetCodeBot(commands.Bot):
                 if scope.lower() == "global":
                     msg = await ctx.send("⏳ Syncing **globally** (updates in ~1 hour)...")
                     synced = await self.tree.sync()
-                    await msg.edit(content=f"✅ Synced {len(synced)} global commands.", delete_after=10)
+                    await msg.edit(content=f"✅ Synced {len(synced)} global commands.", delete_after=3)
                     print(f"Global sync: {len(synced)} commands")
                     
                 # 2. GUILD SYNC (The "Copy" Trick - Instant Update)
                 else:
                     if not ctx.guild:
-                        await ctx.send("❌ Guild sync must be run inside a server.", delete_after=5)
+                        await ctx.send("❌ Guild sync must be run inside a server.", delete_after=3)
                         return
 
                     msg = await ctx.send(f"⏳ Syncing commands to **{ctx.guild.name}**...")
@@ -134,12 +134,12 @@ class LeetCodeBot(commands.Bot):
                     
                     await msg.edit(
                         content=f"✅ Synced {len(synced)} commands: {', '.join(f'`/{cmd.name}`' for cmd in synced)}",
-                        delete_after=10
+                        delete_after=3
                     )
                     print(f"Guild sync ({ctx.guild.name}): {len(synced)} commands")
                 
             except Exception as e:
-                await ctx.send(f"❌ Sync failed: {e}", delete_after=10)
+                await ctx.send(f"❌ Sync failed: {e}", delete_after=3)
                 print(f"Sync error: {e}")
 
         # Register error handler

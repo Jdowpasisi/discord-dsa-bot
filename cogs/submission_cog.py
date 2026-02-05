@@ -11,7 +11,7 @@ Updated based on Internal Design Note:
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import config
 from utils.logic import (
     normalize_problem_name,
@@ -20,6 +20,9 @@ from utils.logic import (
     calculate_points,
     SubmissionStatus
 )
+
+# Define IST Timezone (UTC + 5:30) - consistent with scheduler_cog.py
+IST = timezone(timedelta(hours=5, minutes=30))
 
 # Allowed channels for submissions
 ALLOWED_CHANNELS = ["dsa", "potd"]
@@ -67,7 +70,7 @@ class SubmissionCog(commands.Cog):
         try:
             # 2. Setup
             discord_id = interaction.user.id
-            now = datetime.now()
+            now = datetime.now(IST)
             today_str = now.date().isoformat()
             selected_platform = platform.value
 
