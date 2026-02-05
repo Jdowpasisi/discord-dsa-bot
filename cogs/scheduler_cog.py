@@ -54,7 +54,7 @@ class SchedulerCog(commands.Cog):
         1. Mark problems as POTD in DB.
         2. Post Embed to Discord.
         """
-        today_str = datetime.now().date().isoformat()
+        today_str = datetime.now(IST).date().isoformat()
         
         # Check if we have a full set (1, 2, 3)
         if len(batch_data) < 3:
@@ -69,9 +69,9 @@ class SchedulerCog(commands.Cog):
         # 2. Create Embed
         embed = discord.Embed(
             title=f"📅 Problem of the Day {note}",
-            description=f"**Date:** {datetime.now().strftime('%B %d, %Y')}\n**Deadline:** 11:59 PM Today",
+            description=f"**Date:** {datetime.now(IST).strftime('%B %d, %Y')}\n**Deadline:** 11:59 PM Today",
             color=discord.Color.blue(),
-            timestamp=datetime.now()
+            timestamp=datetime.now(IST)
         )
 
         # Sort 1 -> 2 -> 3
@@ -319,7 +319,7 @@ class SchedulerCog(commands.Cog):
         
         try:
             # 1. Clear old POTDs (from previous days)
-            today_str = datetime.now().date().isoformat()
+            today_str = datetime.now(IST).date().isoformat()
             logger.info(f"Clearing old POTDs before {today_str}...")
             await self.db_manager.clear_old_potd(today_str)
             logger.info(f"✅ Cleared old POTDs before {today_str}")

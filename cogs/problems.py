@@ -217,11 +217,15 @@ class Problems(commands.Cog):
     @app_commands.command(name="check_potd", description="Admin: Check today's POTD (if set)")
     @app_commands.checks.has_permissions(administrator=True)
     async def check_daily_problem(self, interaction: discord.Interaction):
-        """Admin command to check today's problem"""
+        """Admin command to check today's problem - displays exact midnight message format"""
         await interaction.response.defer(ephemeral=True)
         
         try:
-            today_str = datetime.now().date().isoformat()
+            # Import IST timezone from scheduler
+            from datetime import timezone, timedelta
+            IST = timezone(timedelta(hours=5, minutes=30))
+            
+            today_str = datetime.now(IST).date().isoformat()
             # Fetch all POTD problems for today (no platform filter)
             potd_problems = await self.bot.db.get_potd_for_date(today_str)
             
@@ -229,36 +233,39 @@ class Problems(commands.Cog):
                 await interaction.followup.send("🌟 No POTD set for today. Check back later!")
                 return
             
+            # Use exact same format as midnight POTD message
             embed = discord.Embed(
-                title="🏆 Today's Problem of the Day",
-                description=f"**Date:** {datetime.now().strftime('%B %d, %Y')}",
-                color=config.COLOR_PRIMARY,
-                timestamp=datetime.now()
+                title="📅 Problem of the Day",
+                description=f"**Date:** {datetime.now(IST).strftime('%B %d, %Y')}\n**Deadline:** 11:59 PM Today",
+                color=discord.Color.blue(),
+                timestamp=datetime.now(IST)
             )
             
+            # Convert list to dictionary keyed by year for consistent sorting
+            batch_data = {}
             for problem in potd_problems:
-                platform = problem['platform']
-                
-                if platform == "GeeksforGeeks":
-                    # Use centralized GFG parsing
-                    clean_slug = parse_gfg_slug(problem['problem_title'])  # title is URL
-                    display_title = generate_gfg_title(clean_slug)
-                    url = problem['problem_title']
-                    # GFG Style: Clean Title, No Difficulty displayed
-                    field_name = f"Year {problem.get('academic_year', '?')} : {platform}"
-                else:
-                    display_title = problem['problem_title']
-                    url = generate_problem_url(platform, problem['problem_slug'])
-                    # Standard Style
-                    field_name = f"Year {problem.get('academic_year', '?')} ({problem['difficulty']}) : {platform}"
+                year = problem.get('academic_year', '?')
+                batch_data[year] = {
+                    'title': problem['problem_title'],
+                    'slug': problem['problem_slug'],
+                    'platform': problem['platform'],
+                    'difficulty': problem.get('difficulty', 'Medium')
+                }
+            
+            # Sort 1 -> 2 -> 3 (same as midnight message)
+            sorted_years = sorted(batch_data.keys())
+            
+            for year in sorted_years:
+                p = batch_data[year]
+                safe_url = generate_problem_url(p['platform'], p['slug'])
+                difficulty = p.get('difficulty', 'Medium')
                 
                 embed.add_field(
-                    name=field_name,
-                    value=f"**{display_title}**\n[Solve Here]({url})",
+                    name=f"🔹 Year {year} ({difficulty}) - {p['platform']}",
+                    value=f"**{p['title']}**\n[Solve Here]({safe_url})",
                     inline=False
                 )
             
-            embed.set_footer(text="Submit with /submit to earn points!")
             await interaction.followup.send(embed=embed)
             
         except Exception as e:
