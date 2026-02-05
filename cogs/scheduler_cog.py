@@ -49,24 +49,15 @@ class SchedulerCog(commands.Cog):
 
     # ==================== Core Logic ======================================
 
-    async def _post_daily_batch(self, batch_data: dict, note: str = ""):
+    def _create_potd_embed(self, batch_data: dict, note: str = "") -> discord.Embed:
         """
-        1. Mark problems as POTD in DB.
-        2. Post Embed to Discord.
+        Create the POTD embed (doesn't post or update DB).
         """
-        today_str = datetime.now(IST).date().isoformat()
-        
         # Check if we have a full set (1, 2, 3)
         if len(batch_data) < 3:
             logger.warning("Batch incomplete. Missing some years.")
 
-        # 1. Update DB (Set as POTD)
-        if not note.startswith("(Preview"): # Only update DB if not a preview
-            for year, prob in batch_data.items():
-                await self.db_manager.set_potd(prob['slug'], prob['platform'], today_str)
-            logger.info(f"Set POTD for {today_str}")
-
-        # 2. Create Embed
+        # Create Embed
         embed = discord.Embed(
             title=f"📅 Problem of the Day {note}",
             description=f"**Date:** {datetime.now(IST).strftime('%B %d, %Y')}\n**Deadline:** 11:59 PM Today",
@@ -90,6 +81,24 @@ class SchedulerCog(commands.Cog):
                 value=f"**{p['title']}**\n[Solve Here]({safe_url})",
                 inline=False
             )
+        
+        return embed
+
+    async def _post_daily_batch(self, batch_data: dict, note: str = ""):
+        """
+        1. Mark problems as POTD in DB.
+        2. Post Embed to Discord.
+        """
+        today_str = datetime.now(IST).date().isoformat()
+
+        # 1. Update DB (Set as POTD)
+        if not note.startswith("(Preview"): # Only update DB if not a preview
+            for year, prob in batch_data.items():
+                await self.db_manager.set_potd(prob['slug'], prob['platform'], today_str)
+            logger.info(f"Set POTD for {today_str}")
+
+        # 2. Create Embed
+        embed = self._create_potd_embed(batch_data, note)
 
         # 3. Post
         channel = discord.utils.get(self.bot.get_all_channels(), name=self.CHANNEL_NAME)
@@ -222,29 +231,15 @@ class SchedulerCog(commands.Cog):
                 await interaction.followup.send("⚠️ Queue is empty! No unused problems found in DB.")
                 return
             
-            # Create preview embed
-            embed = discord.Embed(
-                title="📋 Next POTD Preview (Test)",
-                description="This is what would be posted next. Database will NOT be updated.",
-                color=discord.Color.orange(),
-                timestamp=datetime.now()
+            # Create the exact embed that would be posted at midnight
+            embed = self._create_potd_embed(batch)
+            
+            # Send as ephemeral with a note
+            await interaction.followup.send(
+                content="**📋 Preview: This is exactly what will be posted at midnight IST**\n"
+                        "_Database will NOT be updated. Use /force_potd to post this batch immediately._",
+                embed=embed
             )
-            
-            sorted_years = sorted(batch.keys())
-            
-            for year in sorted_years:
-                p = batch[year]
-                safe_url = generate_problem_url(p['platform'], p['slug'])
-                difficulty = p.get('difficulty', 'Medium')
-                
-                embed.add_field(
-                    name=f"🔹 Year {year} ({difficulty}) - {p['platform']}",
-                    value=f"**{p['title']}**\n[Solve Here]({safe_url})",
-                    inline=False
-                )
-            
-            embed.set_footer(text="Use /force_potd to post this batch and mark as POTD")
-            await interaction.followup.send(embed=embed)
             
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}")
