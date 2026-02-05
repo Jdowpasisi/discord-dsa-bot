@@ -25,12 +25,12 @@ class Difficulty(Enum):
     HARD = "Hard"
 
 DIFFICULTY_POINTS = {
-    "Easy": 10,
+    "Easy": 5,
     "Medium": 10,
     "Hard": 15,
-    "1st Year": 10, 
-    "2nd Year": 10,
-    "3rd Year": 15
+    "1st Year": 5,   # Maps to Easy difficulty
+    "2nd Year": 10,  # Maps to Medium difficulty
+    "3rd Year": 15   # Maps to Hard difficulty
 }
 
 
