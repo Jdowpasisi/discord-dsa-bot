@@ -95,7 +95,7 @@ class HelpCog(commands.Cog):
         
         embed.add_field(
             name="💡 Points System",
-            value="Easy: 10 │ Medium: 10 │ Hard: 15 │ POTD: 15",
+            value="Easy: 5 │ Medium: 10 │ Hard: 15 │ POTD: 15",
             inline=False
         )
         

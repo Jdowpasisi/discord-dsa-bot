@@ -50,7 +50,7 @@ class StatsCog(commands.Cog):
     
     def _get_week_range(self) -> Tuple[datetime, datetime]:
         """Get current week's Monday-Sunday date range."""
-        today = datetime.now()
+        today = datetime.now(IST)
         # Monday = 0, Sunday = 6
         monday = today - timedelta(days=today.weekday())
         sunday = monday + timedelta(days=6)
@@ -63,7 +63,7 @@ class StatsCog(commands.Cog):
     
     def _get_month_range(self) -> Tuple[datetime, datetime]:
         """Get current month's date range."""
-        today = datetime.now()
+        today = datetime.now(IST)
         first_day = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         
         # Last day of month
@@ -435,10 +435,10 @@ class StatsCog(commands.Cog):
     
     # ==================== Automated Tasks ====================
     
-    @tasks.loop(time=time(hour=23, minute=59))  # Sunday 11:59 PM
+    @tasks.loop(time=time(hour=23, minute=59, tzinfo=IST))  # Sunday 11:59 PM IST
     async def weekly_leaderboard_post(self):
         """
-        Automated weekly leaderboard post every Sunday at 11:59 PM.
+        Automated weekly leaderboard post every Sunday at 11:59 PM IST.
         
         Posts:
         - Top 5 users by weekly points
@@ -446,7 +446,7 @@ class StatsCog(commands.Cog):
         - Weekly winner announcement
         """
         try:
-            today = datetime.now()
+            today = datetime.now(IST)
             
             # Only run on Sundays (weekday 6)
             if today.weekday() != 6:
@@ -565,10 +565,10 @@ class StatsCog(commands.Cog):
         await self.bot.wait_until_ready()
         logger.info("Bot ready - weekly leaderboard task will begin")
     
-    @tasks.loop(time=time(hour=0, minute=0))  # Midnight
+    @tasks.loop(time=time(hour=0, minute=0, tzinfo=IST))  # Midnight IST
     async def monthly_leaderboard_post(self):
         """
-        Automated monthly leaderboard post on 1st of each month at midnight.
+        Automated monthly leaderboard post on 1st of each month at midnight IST.
         
         Posts:
         - Top 5 users by monthly points
@@ -576,7 +576,7 @@ class StatsCog(commands.Cog):
         - Inactive user count
         """
         try:
-            today = datetime.now()
+            today = datetime.now(IST)
             
             # Only run on 1st of month
             if today.day != 1:
