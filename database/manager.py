@@ -587,12 +587,14 @@ class DatabaseManager:
     async def set_potd(self, problem_slug: str, platform: str, potd_date: str) -> None:
         """Mark a problem as POTD for a specific date"""
         async with self.pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 """UPDATE Problems 
                    SET is_potd = 1, potd_date = $1 
                    WHERE problem_slug = $2 AND platform = $3""",
                 potd_date, problem_slug, platform
             )
+            # Result is like "UPDATE 1" or "UPDATE 0"
+            logger.info(f"set_potd({problem_slug}, {platform}, {potd_date}): {result}")
 
     async def clear_old_potd(self, current_date: str) -> None:
         """Clear POTD status from problems that are not from today"""

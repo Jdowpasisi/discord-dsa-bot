@@ -91,11 +91,23 @@ class SchedulerCog(commands.Cog):
         """
         today_str = datetime.now(IST).date().isoformat()
 
-        # 1. Update DB (Set as POTD)
+        # 1. Update DB (Set as POTD) - Use create_problem which is an UPSERT
         if not note.startswith("(Preview"): # Only update DB if not a preview
             for year, prob in batch_data.items():
-                await self.db_manager.set_potd(prob['slug'], prob['platform'], today_str)
-            logger.info(f"Set POTD for {today_str}")
+                # Use create_problem with is_potd=1 (same as /setpotd command)
+                # This is an UPSERT that guarantees the record is updated
+                await self.db_manager.create_problem(
+                    problem_slug=prob['slug'],
+                    platform=prob['platform'],
+                    problem_title=prob['title'],
+                    difficulty=prob['difficulty'],
+                    academic_year=prob['academic_year'],
+                    topic=None,
+                    is_potd=1,
+                    potd_date=today_str
+                )
+                logger.info(f"Set POTD: {prob['slug']} ({prob['platform']}) for {today_str}")
+            logger.info(f"✅ All {len(batch_data)} problems marked as POTD for {today_str}")
 
         # 2. Create Embed
         embed = self._create_potd_embed(batch_data, note)

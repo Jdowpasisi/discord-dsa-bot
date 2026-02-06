@@ -128,13 +128,23 @@ class SubmissionCog(commands.Cog):
             is_potd = False
             
             if existing_problem:
-                # Check 1: Is the 'is_potd' flag set to 1 AND potd_date matches today?
-                if existing_problem.get("is_potd") == 1 and existing_problem.get("potd_date") == today_str:
+                # Check 1: Is the 'is_potd' flag truthy AND potd_date matches today?
+                # Using bool() to handle both integer (1) and boolean (True) from PostgreSQL
+                db_is_potd = bool(existing_problem.get("is_potd"))
+                db_potd_date = existing_problem.get("potd_date")
+                
+                print(f"[DEBUG submit] Problem: {problem_slug}, Platform: {selected_platform}")
+                print(f"[DEBUG submit] DB is_potd={existing_problem.get('is_potd')} ({type(existing_problem.get('is_potd'))}), potd_date={db_potd_date}")
+                print(f"[DEBUG submit] Today: {today_str}, Match: {db_potd_date == today_str}")
+                
+                if db_is_potd and db_potd_date == today_str:
                     is_potd = True
                 
                 # Check 2 (Fallback): Does the date_posted match today (legacy support)?
                 elif existing_problem.get("date_posted") == today_str:
                     is_potd = True
+            else:
+                print(f"[DEBUG submit] Problem not found in DB: {problem_slug} / {selected_platform}")
             
             # If problem doesn't exist, create it as NON-POTD (date_posted will be NULL)
             if not existing_problem:

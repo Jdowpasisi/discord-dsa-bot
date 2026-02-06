@@ -225,11 +225,14 @@ class Problems(commands.Cog):
         
         try:
             today_str = datetime.now(IST).date().isoformat()
+            print(f"[DEBUG check_potd] Querying for date: {today_str}")
+            
             # Fetch all POTD problems for today (no platform filter)
             potd_problems = await self.bot.db.get_potd_for_date(today_str)
+            print(f"[DEBUG check_potd] Found {len(potd_problems) if potd_problems else 0} problems")
             
             if not potd_problems:
-                await interaction.followup.send("🌟 No POTD set for today. Check back later!")
+                await interaction.followup.send(f"🌟 No POTD set for today ({today_str}). Check back later!")
                 return
             
             embed = discord.Embed(
@@ -267,6 +270,41 @@ class Problems(commands.Cog):
         except Exception as e:
             print(f"Error in check_potd: {e}")
             await interaction.followup.send("❌ Failed to retrieve daily problems.")
+
+    @app_commands.command(name="debug_potd", description="Admin: Debug POTD database state")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def debug_potd(self, interaction: discord.Interaction):
+        """Debug command to check raw POTD data in database"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            today_str = datetime.now(IST).date().isoformat()
+            
+            # Raw query to check all POTD-related problems
+            async with self.bot.db.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT problem_slug, platform, is_potd, potd_date, academic_year
+                       FROM Problems 
+                       WHERE is_potd = 1 OR potd_date IS NOT NULL
+                       ORDER BY potd_date DESC NULLS LAST
+                       LIMIT 10"""
+                )
+            
+            if not rows:
+                await interaction.followup.send(f"📊 No problems with is_potd=1 or potd_date set.\n**Today (IST):** `{today_str}`")
+                return
+            
+            lines = [f"**Today (IST):** `{today_str}`\n**Problems with POTD status:**\n"]
+            for row in rows:
+                slug, platform, is_potd, potd_date, year = row[0], row[1], row[2], row[3], row[4]
+                match = "✅" if potd_date == today_str else "❌"
+                lines.append(f"{match} `{slug}` ({platform}, Y{year}) - is_potd={is_potd}, date={potd_date}")
+            
+            await interaction.followup.send("\n".join(lines))
+            
+        except Exception as e:
+            print(f"Error in debug_potd: {e}")
+            await interaction.followup.send(f"❌ Error: {e}")
 
     # ==================================================================
     # 5. Set POTD (Manual)
