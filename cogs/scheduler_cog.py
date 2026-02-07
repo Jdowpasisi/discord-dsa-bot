@@ -76,9 +76,10 @@ class SchedulerCog(commands.Cog):
             
             # Display both difficulty and year
             difficulty = p.get('difficulty', 'Medium')
+            title_display = f"{p['slug']} - {p['title']}" if p['platform'] == "Codeforces" else f"{p['title']}"
             embed.add_field(
                 name=f"🔹 Year {year} ({difficulty}) - {p['platform']}",
-                value=f"**{p['title']}**\n[Solve Here]({safe_url})",
+                value=f"**{title_display}**\n[Solve Here]({safe_url})",
                 inline=False
             )
         
