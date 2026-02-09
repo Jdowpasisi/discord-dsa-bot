@@ -198,6 +198,11 @@ class Problems(commands.Cog):
                     url = problem['problem_title']
                     # GFG Style: Clean Title, No Difficulty displayed
                     field_name = f"Year {problem.get('academic_year', '?')} : {platform}"
+                elif platform == "Codeforces":
+                    # For Codeforces, show problem ID along with title
+                    display_title = f"{problem['problem_slug']} - {problem['problem_title']}"
+                    url = generate_problem_url(platform, problem['problem_slug'])
+                    field_name = f"Year {problem.get('academic_year', '?')} ({problem['difficulty']}) : {platform}"
                 else:
                     display_title = problem['problem_title']
                     url = generate_problem_url(platform, problem['problem_slug'])
@@ -252,6 +257,11 @@ class Problems(commands.Cog):
                     url = problem['problem_title']
                     # GFG Style: Clean Title, No Difficulty displayed
                     field_name = f"Year {problem.get('academic_year', '?')} : {platform}"
+                elif platform == "Codeforces":
+                    # For Codeforces, show problem ID along with title
+                    display_title = f"{problem['problem_slug']} - {problem['problem_title']}"
+                    url = generate_problem_url(platform, problem['problem_slug'])
+                    field_name = f"Year {problem.get('academic_year', '?')} ({problem['difficulty']}) : {platform}"
                 else:
                     display_title = problem['problem_title']
                     url = generate_problem_url(platform, problem['problem_slug'])
