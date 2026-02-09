@@ -119,7 +119,7 @@ The bot automatically posts daily problems at **12:00 AM IST** to the `#potd` ch
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
+Deployed using Azure VM.
 
 ## License
 
