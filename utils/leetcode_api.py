@@ -232,10 +232,20 @@ class LeetCodeService:
             data = await self._request_with_retry(payload)
             
             if not data:
+                print(f"[LeetCode] ❌ No data returned for slug: {slug}")
                 return None
+
+            # Debug: Log the response structure
+            print(f"[LeetCode] Response keys: {list(data.keys())}")
+            if "data" in data:
+                print(f"[LeetCode] data.keys: {list(data.get('data', {}).keys())}")
+            if "errors" in data:
+                print(f"[LeetCode] ⚠️ GraphQL errors: {data['errors']}")
 
             question = data.get("data", {}).get("question")
             if not question:
+                print(f"[LeetCode] ❌ No question data for slug: {slug}")
+                print(f"[LeetCode] Full response: {data}")
                 return None
 
             result = ProblemData(
@@ -280,24 +290,34 @@ class LeetCodeService:
                 "variables": {"username": username, "limit": 20}
             }
 
+            print(f"[LeetCode] Verifying submission for user: {username}, problem: {problem_slug}")
             data = await self._request_with_retry(payload)
             
             if not data:
+                print(f"[LeetCode] ❌ No data returned for submission verification")
                 return False, "LeetCode API unavailable after multiple retries."
 
             if "errors" in data:
+                print(f"[LeetCode] ⚠️ GraphQL errors in submission check: {data['errors']}")
                 return False, "Invalid or private LeetCode profile."
 
             submissions = data.get("data", {}).get("recentAcSubmissionList", [])
+            print(f"[LeetCode] Found {len(submissions)} recent submissions for {username}")
+            
             if not submissions:
                 return False, "No public accepted submissions found."
 
             now = time.time()
             max_age = timeframe_minutes * 60
+            
+            # Debug: Show what problems were found
+            recent_slugs = [sub.get("titleSlug") for sub in submissions[:5]]
+            print(f"[LeetCode] Recent problems: {recent_slugs}")
 
             for sub in submissions:
                 if sub["titleSlug"] == problem_slug:
                     submission_time = int(sub["timestamp"])
+                    print(f"[LeetCode] ✅ Found matching submission for {problem_slug}")
                     if now - submission_time <= max_age:
                         return True, None
 

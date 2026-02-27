@@ -381,6 +381,45 @@ class Problems(commands.Cog):
             print(f"Error in test_leetcode_api: {e}")
             await interaction.followup.send(f"❌ Error testing API: {e}")
 
+    @app_commands.command(name="test_problem_slug", description="Admin: Test if a problem slug exists on LeetCode")
+    @app_commands.describe(slug="Problem slug to test (e.g., two-sum)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def test_problem_slug(self, interaction: discord.Interaction, slug: str):
+        """Test if a specific problem slug can be found on LeetCode"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            from utils.logic import normalize_problem_name
+            api = get_leetcode_api()
+            
+            # Normalize the slug
+            normalized = normalize_problem_name(slug)
+            
+            await interaction.followup.send(f"🔍 Testing slug: `{normalized}`\n*Check bot logs for detailed response...*")
+            
+            # Try to fetch metadata
+            result = await api.get_problem_metadata(normalized)
+            
+            if result:
+                embed = discord.Embed(
+                    title="✅ Problem Found",
+                    description=f"Successfully fetched metadata for `{normalized}`",
+                    color=config.COLOR_SUCCESS
+                )
+                embed.add_field(name="Title", value=result.title, inline=False)
+                embed.add_field(name="Difficulty", value=result.difficulty, inline=True)
+                embed.add_field(name="Question ID", value=result.question_id, inline=True)
+                embed.add_field(name="Title Slug", value=result.title_slug, inline=True)
+                await interaction.edit_original_response(content=None, embed=embed)
+            else:
+                await interaction.edit_original_response(
+                    content=f"❌ Problem `{normalized}` not found.\n\n**Check bot logs for the actual API response details.**"
+                )
+                
+        except Exception as e:
+            print(f"Error in test_problem_slug: {e}")
+            await interaction.followup.send(f"❌ Error: {e}")
+
     # ==================================================================
     # 5. Set POTD (Manual)
     # ==================================================================
