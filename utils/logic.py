@@ -102,6 +102,58 @@ def get_leetcode_api_instance():
         return get_leetcode_api()
 
 
+async def get_leetcode_problem_with_fallback(problem_slug: str):
+    """
+    Try alfa API first, fall back to direct API if it fails.
+    This handles cases where alfa API is down or rate-limited.
+    """
+    # Try alfa API first
+    try:
+        alfa_api = get_alfa_leetcode_api()
+        result = await alfa_api.get_problem_metadata(problem_slug)
+        if result:
+            return result, "alfa"
+    except Exception as e:
+        print(f"[Fallback] Alfa API failed: {e}")
+    
+    # Fall back to direct API
+    try:
+        direct_api = get_leetcode_api()
+        result = await direct_api.get_problem_metadata(problem_slug)
+        if result:
+            print(f"[Fallback] Using direct API for {problem_slug}")
+            return result, "direct"
+    except Exception as e:
+        print(f"[Fallback] Direct API also failed: {e}")
+    
+    return None, None
+
+
+async def verify_leetcode_submission_with_fallback(username: str, problem_slug: str, timeframe_minutes: int = 1440):
+    """
+    Try alfa API first, fall back to direct API if it fails.
+    """
+    # Try alfa API first
+    try:
+        alfa_api = get_alfa_leetcode_api()
+        verified, error = await alfa_api.verify_recent_submission(username, problem_slug, timeframe_minutes)
+        if verified or not error.startswith("API"):
+            return verified, error, "alfa"
+    except Exception as e:
+        print(f"[Fallback] Alfa submission verification failed: {e}")
+    
+    # Fall back to direct API
+    try:
+        direct_api = get_leetcode_api()
+        verified, error = await direct_api.verify_recent_submission(username, problem_slug, timeframe_minutes)
+        if verified:
+            print(f"[Fallback] Used direct API for submission verification")
+        return verified, error, "direct"
+    except Exception as e:
+        print(f"[Fallback] Direct API verification also failed: {e}")
+        return False, "Both APIs unavailable. Please try again later.", None
+
+
 # ==========================
 # Submission Validation
 # ==========================
@@ -140,15 +192,14 @@ async def validate_submission(
             return (SubmissionStatus.NOT_LINKED, "⚠️ Link your LeetCode account first using `/setup leetcode:<your_username>`", None)
         
         leetcode_username = user_profile["leetcode_username"]
-        api = get_leetcode_api_instance()  # Use config-based API selection
-
-        # Fetch Metadata
-        problem_data = await api.get_problem_metadata(problem_id)
+        
+        # Use fallback system (alfa → direct)
+        problem_data, api_used = await get_leetcode_problem_with_fallback(problem_id)
         if not problem_data:
             return (SubmissionStatus.INVALID, f"❌ Problem `{problem_id}` not found on LeetCode.", None)
 
-        # Verify Submission (24h window)
-        verified, error = await api.verify_recent_submission(leetcode_username, problem_id, timeframe_minutes=1440)
+        # Verify Submission with fallback (24h window)
+        verified, error, verify_api = await verify_leetcode_submission_with_fallback(leetcode_username, problem_id, timeframe_minutes=1440)
         if not verified:
             return (SubmissionStatus.INVALID, f"❌ Verification failed: {error}", None)
 

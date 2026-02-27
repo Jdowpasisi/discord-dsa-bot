@@ -79,8 +79,13 @@ class AlfaLeetCodeAPI:
                 
                 data = await response.json()
                 
+                # Handle empty response (API cold start or rate limit)
+                if not data or data == {}:
+                    print(f"[AlfaLeetCode] ⚠️ Empty response for {slug} - API may be cold starting or rate limited")
+                    return None
+                
                 # Check if problem exists
-                if not data or "questionId" not in data:
+                if "questionId" not in data or not data.get("questionTitle"):
                     print(f"[AlfaLeetCode] ❌ Problem not found: {slug}")
                     print(f"[AlfaLeetCode] Response: {data}")
                     return None
