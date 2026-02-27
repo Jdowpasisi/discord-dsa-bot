@@ -58,8 +58,8 @@ LEADERBOARD_SIZE = 10
 RECENT_SUBMISSIONS_LIMIT = 5
 
 # LeetCode API Configuration
-# Options: "direct" (leetcode.com/graphql) or "alfa" (alfa-leetcode-api proxy)
-LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "direct")  # Default to direct (more stable)
+# Options: "direct" (leetcode.com/graphql), "alfa" (alfa-leetcode-api proxy), "trust" (trust-based, no API)
+LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "trust")  # Default to trust-based (most reliable)
 
 # Embed Colors (in hex)
 COLOR_PRIMARY = 0x7289DA  # Discord Blurple

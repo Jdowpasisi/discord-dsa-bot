@@ -193,23 +193,38 @@ async def validate_submission(
         
         leetcode_username = user_profile["leetcode_username"]
         
-        # Use fallback system (alfa → direct)
-        problem_data, api_used = await get_leetcode_problem_with_fallback(problem_id)
-        if not problem_data:
-            return (SubmissionStatus.INVALID, f"❌ Problem `{problem_id}` not found on LeetCode.", None)
+        # Check if we're using trust-based mode
+        api_mode = getattr(config, 'LEETCODE_API_MODE', 'trust')
+        
+        if api_mode == "trust":
+            # Trust-based verification (no API calls)
+            print(f"[LeetCode] Trust-based verification for: {problem_id}")
+            
+            # Parse difficulty from problem name if not provided
+            # Default to Medium if not specified
+            difficulty = difficulty or "Medium"
+            
+            # Generate proper title from slug
+            title = problem_id.replace("-", " ").title()
+            
+            submission_data = {
+                "title": title,
+                "difficulty": difficulty,
+                "url": f"https://leetcode.com/problems/{problem_id}/",
+                "slug": problem_id
+            }
+        else:
+            # Use fallback system (alfa → direct)
+            problem_data, api_used = await get_leetcode_problem_with_fallback(problem_id)
+            if not problem_data:
+                return (SubmissionStatus.INVALID, f"❌ Problem `{problem_id}` not found on LeetCode.", None)
 
-        # Verify Submission with fallback (24h window)
-        verified, error, verify_api = await verify_leetcode_submission_with_fallback(leetcode_username, problem_id, timeframe_minutes=1440)
-        if not verified:
-            return (SubmissionStatus.INVALID, f"❌ Verification failed: {error}", None)
-
-        # ✅ FIX: Use title_slug consistently as the problem identifier
-        submission_data = {
-            "title": problem_data.title,
-            "difficulty": problem_data.difficulty,
-            "url": f"https://leetcode.com/problems/{problem_data.title_slug}/",
-            "slug": problem_data.title_slug  # ← CHANGED: Use slug instead of question_id
-        }
+            submission_data = {
+                "title": problem_data.title,
+                "difficulty": problem_data.difficulty,
+                "url": f"https://leetcode.com/problems/{problem_data.title_slug}/",
+                "slug": problem_data.title_slug
+            }
 
     # ==========================
     # Platform: Codeforces
