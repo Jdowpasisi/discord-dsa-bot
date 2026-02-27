@@ -57,6 +57,10 @@ WEEKLY_STREAK_BONUS = 20
 LEADERBOARD_SIZE = 10
 RECENT_SUBMISSIONS_LIMIT = 5
 
+# LeetCode API Configuration
+# Options: "direct" (leetcode.com/graphql) or "alfa" (alfa-leetcode-api proxy)
+LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "alfa")  # Default to alfa for reliability
+
 # Embed Colors (in hex)
 COLOR_PRIMARY = 0x7289DA  # Discord Blurple
 COLOR_SUCCESS = 0x00FF00  # Green

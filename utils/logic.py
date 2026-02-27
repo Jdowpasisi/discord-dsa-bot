@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from typing import Tuple, Optional, Dict, Any
 from enum import Enum
 from utils.leetcode_api import get_leetcode_api
+from utils.leetcode_api_alfa import get_alfa_leetcode_api
+import config
 
 
 # ==========================
@@ -90,6 +92,16 @@ def get_week_bounds(date: datetime) -> Tuple[datetime, datetime]:
     return start, end
 
 
+def get_leetcode_api_instance():
+    """Get the appropriate LeetCode API instance based on config"""
+    mode = getattr(config, 'LEETCODE_API_MODE', 'alfa')
+    
+    if mode == "alfa":
+        return get_alfa_leetcode_api()
+    else:
+        return get_leetcode_api()
+
+
 # ==========================
 # Submission Validation
 # ==========================
@@ -128,7 +140,7 @@ async def validate_submission(
             return (SubmissionStatus.NOT_LINKED, "⚠️ Link your LeetCode account first using `/setup leetcode:<your_username>`", None)
         
         leetcode_username = user_profile["leetcode_username"]
-        api = get_leetcode_api()
+        api = get_leetcode_api_instance()  # Use config-based API selection
 
         # Fetch Metadata
         problem_data = await api.get_problem_metadata(problem_id)

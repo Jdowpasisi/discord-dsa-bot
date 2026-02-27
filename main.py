@@ -39,6 +39,7 @@ from datetime import datetime
 import config
 from database import DatabaseManager
 from utils.leetcode_api import close_leetcode_api
+from utils.leetcode_api_alfa import close_alfa_leetcode_api
 
 print("📦 Using PostgreSQL/Supabase database")
 
@@ -383,8 +384,9 @@ class LeetCodeBot(commands.Bot):
         print("\n🔄 Shutting down bot...")
         print("  • Closing database connection...")
         await self.db.close()
-        print("  • Closing LeetCode API session...")
+        print("  • Closing LeetCode API sessions...")
         await close_leetcode_api()
+        await close_alfa_leetcode_api()
         print("  • Closing Discord connection...")
         await super().close()
         print("✓ Cleanup complete")

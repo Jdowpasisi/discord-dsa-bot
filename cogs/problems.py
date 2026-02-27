@@ -16,9 +16,9 @@ from utils.logic import (
     normalize_problem_name,
     parse_gfg_slug,
     generate_gfg_title,
-    generate_problem_url
+    generate_problem_url,
+    get_leetcode_api_instance
 )
-from utils.leetcode_api import get_leetcode_api
 from utils.codeforces_api import get_codeforces_api
 
 class Problems(commands.Cog):
@@ -38,7 +38,7 @@ class Problems(commands.Cog):
         """
         if platform == "LeetCode":
             clean_slug = normalize_problem_name(slug)
-            api = get_leetcode_api()
+            api = get_leetcode_api_instance()
             meta = await api.get_problem_metadata(clean_slug)
             if meta:
                 return {
@@ -323,7 +323,7 @@ class Problems(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            api = get_leetcode_api()
+            api = get_leetcode_api_instance()
             
             # Get cache stats
             cache_stats = api.get_cache_stats()
@@ -390,7 +390,7 @@ class Problems(commands.Cog):
         
         try:
             from utils.logic import normalize_problem_name
-            api = get_leetcode_api()
+            api = get_leetcode_api_instance()
             
             # Normalize the slug
             normalized = normalize_problem_name(slug)
