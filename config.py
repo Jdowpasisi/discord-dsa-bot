@@ -59,7 +59,7 @@ RECENT_SUBMISSIONS_LIMIT = 5
 
 # LeetCode API Configuration
 # Options: "direct" (leetcode.com/graphql) or "alfa" (alfa-leetcode-api proxy)
-LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "alfa")  # Default to alfa for reliability
+LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "direct")  # Default to direct (more stable)
 
 # Embed Colors (in hex)
 COLOR_PRIMARY = 0x7289DA  # Discord Blurple
