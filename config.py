@@ -59,7 +59,8 @@ RECENT_SUBMISSIONS_LIMIT = 5
 
 # LeetCode API Configuration
 # Options: "direct" (leetcode.com/graphql), "alfa" (alfa-leetcode-api proxy), "trust" (trust-based, no API)
-LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "trust")  # Default to trust-based (most reliable)
+# Note: Three-tier fallback is automatic (direct → alfa → trust), this setting is deprecated
+LEETCODE_API_MODE = os.getenv("LEETCODE_API_MODE", "fallback")  # Uses automatic three-tier fallback
 
 # Embed Colors (in hex)
 COLOR_PRIMARY = 0x7289DA  # Discord Blurple
