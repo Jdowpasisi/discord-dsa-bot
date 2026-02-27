@@ -82,12 +82,13 @@ class AlfaLeetCodeAPI:
                 # Check if problem exists
                 if not data or "questionId" not in data:
                     print(f"[AlfaLeetCode] ❌ Problem not found: {slug}")
+                    print(f"[AlfaLeetCode] Response: {data}")
                     return None
                 
-                # Map to our ProblemData structure
+                # Map to our ProblemData structure (alfa API uses different field names)
                 result = ProblemData(
                     question_id=str(data["questionId"]),
-                    title=data["title"],
+                    title=data["questionTitle"],  # ← FIXED: was "title", should be "questionTitle"
                     title_slug=data["titleSlug"],
                     difficulty=data["difficulty"]
                 )
