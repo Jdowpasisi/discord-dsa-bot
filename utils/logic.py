@@ -104,10 +104,10 @@ def get_leetcode_api_instance():
 
 async def get_leetcode_problem_with_fallback(problem_slug: str):
     """
-    Three-tier fallback system:
+    Two-tier fallback system:
     1. Try direct GraphQL API first
     2. Fall back to alfa API if direct fails
-    3. Fall back to trust-based if both fail
+    Returns (problem_data, api_name) or (None, None) if both fail
     """
     # Tier 1: Try direct GraphQL API first
     try:
@@ -129,17 +129,17 @@ async def get_leetcode_problem_with_fallback(problem_slug: str):
     except Exception as e:
         print(f"[Fallback] Alfa API also failed: {e}")
     
-    # Tier 3: Trust-based fallback (always works)
-    print(f"[Fallback] ⚠️ Both APIs failed, using trust-based for {problem_slug}")
-    return None, "trust"
+    # Both APIs failed
+    print(f"[Fallback] ❌ Both APIs failed for {problem_slug}")
+    return None, None
 
 
 async def verify_leetcode_submission_with_fallback(username: str, problem_slug: str, timeframe_minutes: int = 1440):
     """
-    Three-tier fallback for submission verification:
+    Two-tier fallback for submission verification:
     1. Try direct GraphQL API first
     2. Fall back to alfa API if direct fails
-    3. Always succeed with trust-based if both fail
+    Returns (verified, error, api_name) or (False, error_msg, None) if both fail
     """
     # Tier 1: Try direct GraphQL API first
     try:
@@ -167,9 +167,9 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
     except Exception as e:
         print(f"[Fallback] Alfa verification also failed: {e}")
     
-    # Tier 3: Trust-based (always succeeds)
-    print(f"[Fallback] ⚠️ Both API verifications failed, trusting user submission")
-    return True, None, "trust"
+    # Both APIs failed
+    print(f"[Fallback] ❌ Both API verifications failed")
+    return False, "LeetCode API unavailable. Both direct and proxy APIs are down.", None
 
 
 # ==========================
@@ -211,39 +211,34 @@ async def validate_submission(
         
         leetcode_username = user_profile["leetcode_username"]
         
-        # Three-tier fallback: direct → alfa → trust
+        # Two-tier fallback: direct → alfa
         problem_data, api_used = await get_leetcode_problem_with_fallback(problem_id)
         
-        if api_used == "trust":
-            # Both APIs failed, use trust-based
-            print(f"[LeetCode] Using trust-based for {problem_id}")
-            title = problem_id.replace("-", " ").title()
-            submission_data = {
-                "title": title,
-                "difficulty": difficulty or "Medium",
-                "url": f"https://leetcode.com/problems/{problem_id}/",
-                "slug": problem_id
-            }
-        else:
-            # API succeeded (direct or alfa)
-            print(f"[LeetCode] Using {api_used} API for {problem_id}")
-            submission_data = {
-                "title": problem_data.title,
-                "difficulty": problem_data.difficulty,
-                "url": f"https://leetcode.com/problems/{problem_data.title_slug}/",
-                "slug": problem_data.title_slug
-            }
-            
-            # Verify submission with the same three-tier fallback
-            verified, error, verify_api = await verify_leetcode_submission_with_fallback(
-                leetcode_username, problem_data.title_slug, timeframe_minutes=1440
-            )
-            
-            if not verified and verify_api != "trust":
-                # Only fail if it's a real verification failure (not API failure)
-                return (SubmissionStatus.INVALID, f"❌ Verification failed: {error}", None)
-            
-            print(f"[LeetCode] Verification via {verify_api} API/mode")
+        if not problem_data or not api_used:
+            # Both APIs failed
+            return (SubmissionStatus.INVALID, 
+                    "❌ LeetCode API unavailable. Cannot verify problem. Please try again later.", 
+                    None)
+        
+        # API succeeded (direct or alfa)
+        print(f"[LeetCode] Using {api_used} API for {problem_id}")
+        submission_data = {
+            "title": problem_data.title,
+            "difficulty": problem_data.difficulty,
+            "url": f"https://leetcode.com/problems/{problem_data.title_slug}/",
+            "slug": problem_data.title_slug
+        }
+        
+        # Verify submission with the same two-tier fallback
+        verified, error, verify_api = await verify_leetcode_submission_with_fallback(
+            leetcode_username, problem_data.title_slug, timeframe_minutes=1440
+        )
+        
+        if not verified:
+            # Verification failed (either real failure or API unavailable)
+            return (SubmissionStatus.INVALID, f"❌ Verification failed: {error}", None)
+        
+        print(f"[LeetCode] Verification via {verify_api} API")
 
     # ==========================
     # Platform: Codeforces
