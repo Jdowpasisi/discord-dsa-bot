@@ -420,6 +420,45 @@ class Problems(commands.Cog):
             print(f"Error in test_problem_slug: {e}")
             await interaction.followup.send(f"❌ Error: {e}")
 
+    @app_commands.command(name="check_api_mode", description="Admin: Check which LeetCode API is being used")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def check_api_mode(self, interaction: discord.Interaction):
+        """Check which LeetCode API mode is active"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            mode = getattr(config, 'LEETCODE_API_MODE', 'alfa')
+            
+            embed = discord.Embed(
+                title="🔧 API Configuration",
+                description=f"**Current Mode:** `{mode}`",
+                color=config.COLOR_INFO
+            )
+            
+            if mode == "alfa":
+                embed.add_field(
+                    name="Alfa LeetCode API",
+                    value="Using proxy service at alfa-leetcode-api.onrender.com",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Direct LeetCode API",
+                    value="Using leetcode.com/graphql directly",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="How to change",
+                value=f"Set environment variable:\n`LEETCODE_API_MODE={'direct' if mode == 'alfa' else 'alfa'}`",
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}")
+
     # ==================================================================
     # 5. Set POTD (Manual)
     # ==================================================================

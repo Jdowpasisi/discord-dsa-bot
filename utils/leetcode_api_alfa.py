@@ -131,15 +131,20 @@ class AlfaLeetCodeAPI:
                 
                 data = await response.json()
                 
-                # Check for error in response
-                if isinstance(data, dict) and "error" in data:
-                    return False, "Invalid or private LeetCode profile."
+                # Debug: Log the response structure
+                print(f"[AlfaLeetCode] Response type: {type(data)}")
+                print(f"[AlfaLeetCode] Response: {str(data)[:200]}")
                 
-                # Data should be a list of submissions
-                if not isinstance(data, list):
+                # Handle different response formats
+                if isinstance(data, dict):
+                    if "error" in data:
+                        return False, "Invalid or private LeetCode profile."
+                    # If dict, extract submission list
+                    submissions = data.get("submission", [])
+                elif isinstance(data, list):
+                    submissions = data
+                else:
                     return False, "Unexpected API response format."
-                
-                submissions = data.get("submission", []) if isinstance(data, dict) else data
                 
                 if not submissions:
                     return False, "No public accepted submissions found."
