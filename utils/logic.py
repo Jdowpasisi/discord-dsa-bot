@@ -8,6 +8,7 @@ from typing import Tuple, Optional, Dict, Any
 from enum import Enum
 from utils.leetcode_api import get_leetcode_api
 from utils.leetcode_api_alfa import get_alfa_leetcode_api
+from utils.leetcode_api_browser import get_browser_leetcode_api
 import config
 
 
@@ -104,10 +105,11 @@ def get_leetcode_api_instance():
 
 async def get_leetcode_problem_with_fallback(problem_slug: str):
     """
-    Two-tier fallback system:
-    1. Try direct GraphQL API first
+    Three-tier fallback system:
+    1. Try direct GraphQL API first (fastest when available)
     2. Fall back to alfa API if direct fails
-    Returns (problem_data, api_name) or (None, None) if both fail
+    3. Fall back to browser automation if both APIs fail (bypasses Cloudflare)
+    Returns (problem_data, api_name) or (None, None) if all fail
     """
     # Tier 1: Try direct GraphQL API first
     try:
@@ -129,17 +131,29 @@ async def get_leetcode_problem_with_fallback(problem_slug: str):
     except Exception as e:
         print(f"[Fallback] Alfa API also failed: {e}")
     
-    # Both APIs failed
-    print(f"[Fallback] ❌ Both APIs failed for {problem_slug}")
+    # Tier 3: Try browser automation (bypasses Cloudflare)
+    try:
+        print(f"[Fallback] Attempting browser automation for {problem_slug}")
+        browser_api = get_browser_leetcode_api()
+        result = await browser_api.get_problem_metadata(problem_slug)
+        if result:
+            print(f"[Fallback] ✅ Browser API succeeded for {problem_slug}")
+            return result, "browser"
+    except Exception as e:
+        print(f"[Fallback] Browser API also failed: {e}")
+    
+    # All APIs failed
+    print(f"[Fallback] ❌ All APIs failed for {problem_slug}")
     return None, None
 
 
 async def verify_leetcode_submission_with_fallback(username: str, problem_slug: str, timeframe_minutes: int = 1440):
     """
-    Two-tier fallback for submission verification:
-    1. Try direct GraphQL API first
+    Three-tier fallback for submission verification:
+    1. Try direct GraphQL API first (fastest)
     2. Fall back to alfa API if direct fails
-    Returns (verified, error, api_name) or (False, error_msg, None) if both fail
+    3. Fall back to browser automation if both fail (bypasses Cloudflare)
+    Returns (verified, error, api_name) or (False, error_msg, None) if all fail
     """
     # Tier 1: Try direct GraphQL API first
     try:
@@ -167,9 +181,23 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
     except Exception as e:
         print(f"[Fallback] Alfa verification also failed: {e}")
     
-    # Both APIs failed
-    print(f"[Fallback] ❌ Both API verifications failed")
-    return False, "LeetCode API unavailable. Both direct and proxy APIs are down.", None
+    # Tier 3: Try browser automation (bypasses Cloudflare)
+    try:
+        print(f"[Fallback] Attempting browser verification for {username}/{problem_slug}")
+        browser_api = get_browser_leetcode_api()
+        verified, error = await browser_api.verify_recent_submission(username, problem_slug, timeframe_minutes)
+        if verified:
+            print(f"[Fallback] ✅ Browser API verification succeeded")
+            return True, None, "browser"
+        # If not verified but no API error, user really hasn't solved it
+        if error and not error.startswith("Verification failed"):
+            return verified, error, "browser"
+    except Exception as e:
+        print(f"[Fallback] Browser verification also failed: {e}")
+    
+    # All APIs failed
+    print(f"[Fallback] ❌ All API verifications failed")
+    return False, "LeetCode API unavailable. All verification methods are down.", None
 
 
 # ==========================
