@@ -73,10 +73,15 @@ class LeetCodeService:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
+            # Use a browser-like User-Agent to avoid bot detection
             self.session = aiohttp.ClientSession(
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": "DiscordBot/LeetCodeVerifier/1.0"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Origin": "https://leetcode.com",
+                    "Referer": "https://leetcode.com"
                 }
             )
         return self.session
@@ -102,6 +107,23 @@ class LeetCodeService:
             "cache_ttl_hours": self.CACHE_TTL / 3600,
             "oldest_entry_age": max((current_time - c["timestamp"] for c in self._metadata_cache.values()), default=0) / 60
         }
+    
+    async def test_api_health(self) -> Tuple[bool, str]:
+        """Test if LeetCode API is accessible and responding"""
+        try:
+            # Try fetching a known problem (two-sum)
+            test_slug = "two-sum"
+            print(f"[LeetCode] Testing API health with problem: {test_slug}")
+            
+            result = await self.get_problem_metadata(test_slug)
+            
+            if result and result.title:
+                return True, f"✅ API is healthy. Test problem '{result.title}' loaded successfully."
+            else:
+                return False, "❌ API returned empty response. May be down or rate-limiting."
+                
+        except Exception as e:
+            return False, f"❌ API test failed: {str(e)}"
 
     # -----------------------------
     # Retry Logic with Exponential Backoff

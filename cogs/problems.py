@@ -316,6 +316,71 @@ class Problems(commands.Cog):
             print(f"Error in debug_potd: {e}")
             await interaction.followup.send(f"❌ Error: {e}")
 
+    @app_commands.command(name="test_leetcode_api", description="Admin: Test LeetCode API connectivity")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def test_leetcode_api(self, interaction: discord.Interaction):
+        """Test if LeetCode API is accessible and working"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            api = get_leetcode_api()
+            
+            # Get cache stats
+            cache_stats = api.get_cache_stats()
+            
+            # Test API health
+            is_healthy, message = await api.test_api_health()
+            
+            # Build embed
+            color = config.COLOR_SUCCESS if is_healthy else config.COLOR_ERROR
+            embed = discord.Embed(
+                title="🔬 LeetCode API Diagnostics",
+                description=message,
+                color=color
+            )
+            
+            # Add cache stats
+            embed.add_field(
+                name="📊 Cache Statistics",
+                value=(
+                    f"**Total Cached:** {cache_stats['total_cached']} problems\n"
+                    f"**Fresh Entries:** {cache_stats['fresh_entries']}\n"
+                    f"**Cache TTL:** {cache_stats['cache_ttl_hours']:.0f} hours\n"
+                    f"**Oldest Entry:** {cache_stats['oldest_entry_age']:.1f} minutes ago"
+                ),
+                inline=False
+            )
+            
+            # Add API config info
+            embed.add_field(
+                name="⚙️ API Configuration",
+                value=(
+                    f"**Max Retries:** {api.MAX_RETRIES}\n"
+                    f"**Base Delay:** {api.BASE_DELAY}s\n"
+                    f"**Request Timeout:** {api.REQUEST_TIMEOUT}s\n"
+                    f"**Max Wait Time:** ~{sum(api.BASE_DELAY * (2**i) for i in range(api.MAX_RETRIES)):.0f}s"
+                ),
+                inline=False
+            )
+            
+            if not is_healthy:
+                embed.add_field(
+                    name="💡 Troubleshooting",
+                    value=(
+                        "• Check if leetcode.com is accessible\n"
+                        "• API may be rate-limiting the bot\n"
+                        "• Try again in a few minutes\n"
+                        "• Check bot logs for detailed errors"
+                    ),
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            print(f"Error in test_leetcode_api: {e}")
+            await interaction.followup.send(f"❌ Error testing API: {e}")
+
     # ==================================================================
     # 5. Set POTD (Manual)
     # ==================================================================
