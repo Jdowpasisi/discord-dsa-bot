@@ -158,6 +158,20 @@ class DatabaseManager:
             await conn.execute("DELETE FROM Submissions WHERE discord_id = $1", discord_id)
             # Delete user
             await conn.execute("DELETE FROM Users WHERE discord_id = $1", discord_id)
+
+    async def get_all_users_activity(self) -> List[Dict[str, Any]]:
+        """
+        Return all users with their discord_id and last_submission_date.
+        Used for inactivity checks against the full server member list.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT discord_id, last_submission_date FROM Users"
+            )
+            return [
+                {"discord_id": row[0], "last_submission_date": row[1]}
+                for row in rows
+            ]
         
     async def update_user_profile(
         self, 

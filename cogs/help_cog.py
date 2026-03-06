@@ -185,7 +185,21 @@ class HelpCog(commands.Cog):
             ),
             inline=False
         )
-        
+
+        embed.add_field(
+            name="😴 /inactive_members — List inactive members",
+            value=(
+                "```\n"
+                "/inactive_members <period>\n"
+                "```\n"
+                "**Periods:** Last 7 / 14 / 30 / 60 / 90 Days, or All Time (never submitted)\n"
+                "Lists **all server members** (including those without a linked account) "
+                "who have no submission activity in the chosen period. "
+                "Results over 25 members are sent as an attached text file."
+            ),
+            inline=False
+        )
+
         embed.add_field(
             name="🔧 !sync — Sync slash commands (Owner)",
             value=(
