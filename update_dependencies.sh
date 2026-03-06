@@ -19,4 +19,5 @@ playwright install chromium
 echo "✅ Update complete!"
 echo ""
 echo "To apply changes:"
-echo "  sudo systemctl restart discord-bot"
+echo "  sudo systemctl daemon-reload  # If service file changed"
+echo "  sudo systemctl restart discord-bot  # or 'discordbot' if that's your service name"

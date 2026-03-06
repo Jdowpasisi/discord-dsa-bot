@@ -22,7 +22,27 @@ playwright install chromium
 
 # Install system dependencies for Playwright (requires sudo)
 echo "🔧 Installing system dependencies..."
-sudo playwright install-deps chromium
+# Use manual apt install for better compatibility with Ubuntu 24.04
+sudo apt-get install -y \
+    libatk1.0-0t64 \
+    libatk-bridge2.0-0t64 \
+    libcups2t64 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2t64 \
+    libatspi2.0-0t64 \
+    libnss3 \
+    libnspr4 \
+    libxkbcommon0 \
+    libdrm2 || {
+    echo "⚠️  Some packages may have failed. Trying playwright install-deps as fallback..."
+    sudo playwright install-deps chromium
+}
 
 echo ""
 echo "✅ Setup complete!"
