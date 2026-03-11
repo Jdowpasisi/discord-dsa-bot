@@ -139,8 +139,12 @@ async def get_leetcode_problem_with_fallback(problem_slug: str):
         if result:
             print(f"[Fallback] ✅ Browser API succeeded for {problem_slug}")
             return result, "browser"
+    except ImportError as e:
+        print(f"[Fallback] Browser API unavailable (Playwright not installed): {e}")
     except Exception as e:
-        print(f"[Fallback] Browser API also failed: {e}")
+        print(f"[Fallback] Browser API also failed: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
     
     # All APIs failed
     print(f"[Fallback] ❌ All APIs failed for {problem_slug}")
@@ -192,8 +196,12 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
         # If not verified but no API error, user really hasn't solved it
         if error and not error.startswith("Verification failed"):
             return verified, error, "browser"
+    except ImportError as e:
+        print(f"[Fallback] Browser verification unavailable (Playwright not installed): {e}")
     except Exception as e:
-        print(f"[Fallback] Browser verification also failed: {e}")
+        print(f"[Fallback] Browser verification also failed: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
     
     # All APIs failed
     print(f"[Fallback] ❌ All API verifications failed")
