@@ -119,13 +119,13 @@ class AlfaLeetCodeAPI:
     ) -> Tuple[bool, Optional[str]]:
         """
         Verify user submission using Alfa API.
-        Endpoint: /<username>/acSubmission?limit=20
+        Endpoint: /<username>/acSubmission?limit=100
         """
         try:
             print(f"[AlfaLeetCode] Verifying submission for user: {username}, problem: {problem_slug}")
             session = await self._get_session()
             
-            url = f"{self.BASE_URL}/{username}/acSubmission?limit=20"
+            url = f"{self.BASE_URL}/{username}/acSubmission?limit=100"
             
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=self.REQUEST_TIMEOUT)) as response:
                 if response.status == 404:

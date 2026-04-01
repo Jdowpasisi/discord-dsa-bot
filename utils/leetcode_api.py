@@ -287,7 +287,7 @@ class LeetCodeService:
         try:
             payload = {
                 "query": self.RECENT_SUBMISSIONS_QUERY,
-                "variables": {"username": username, "limit": 20}
+                "variables": {"username": username, "limit": 100}
             }
 
             print(f"[LeetCode] Verifying submission for user: {username}, problem: {problem_slug}")
@@ -311,7 +311,7 @@ class LeetCodeService:
             max_age = timeframe_minutes * 60
             
             # Debug: Show what problems were found
-            recent_slugs = [sub.get("titleSlug") for sub in submissions[:5]]
+            recent_slugs = [sub.get("titleSlug") for sub in submissions[:10]]
             print(f"[LeetCode] Recent problems: {recent_slugs}")
 
             for sub in submissions:

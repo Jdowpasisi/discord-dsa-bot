@@ -159,6 +159,8 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
     3. Fall back to browser automation if both fail (bypasses Cloudflare)
     Returns (verified, error, api_name) or (False, error_msg, None) if all fail
     """
+    last_non_api_error: Optional[str] = None
+
     # Tier 1: Try direct GraphQL API first
     try:
         direct_api = get_leetcode_api()
@@ -166,9 +168,10 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
         if verified:
             print(f"[Fallback] ✅ Direct API verification succeeded")
             return True, None, "direct"
-        # If not verified but no API error, user really hasn't solved it
-        if not error.startswith("LeetCode API unavailable"):
-            return verified, error, "direct"
+        # Keep the message, but continue fallback for cross-check when API is flaky.
+        if error and not error.startswith("LeetCode API unavailable"):
+            print(f"[Fallback] Direct API reported no match, cross-checking other tiers: {error}")
+            last_non_api_error = error
     except Exception as e:
         print(f"[Fallback] Direct submission verification failed: {e}")
     
@@ -179,9 +182,10 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
         if verified:
             print(f"[Fallback] ✅ Alfa API verification succeeded")
             return True, None, "alfa"
-        # If not verified but no API error, check if it's a real failure
+        # Keep the message, but continue fallback for cross-check.
         if error and not error.startswith("API"):
-            return verified, error, "alfa"
+            print(f"[Fallback] Alfa API reported no match, cross-checking browser tier: {error}")
+            last_non_api_error = error
     except Exception as e:
         print(f"[Fallback] Alfa verification also failed: {e}")
     
@@ -193,9 +197,8 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
         if verified:
             print(f"[Fallback] ✅ Browser API verification succeeded")
             return True, None, "browser"
-        # If not verified but no API error, user really hasn't solved it
         if error and not error.startswith("Verification failed"):
-            return verified, error, "browser"
+            last_non_api_error = error
     except ImportError as e:
         print(f"[Fallback] Browser verification unavailable (Playwright not installed): {e}")
     except Exception as e:
@@ -203,7 +206,11 @@ async def verify_leetcode_submission_with_fallback(username: str, problem_slug: 
         import traceback
         traceback.print_exc()
     
-    # All APIs failed
+    # All verification tiers exhausted
+    if last_non_api_error:
+        print(f"[Fallback] ❌ Verification failed across all tiers: {last_non_api_error}")
+        return False, last_non_api_error, None
+
     print(f"[Fallback] ❌ All API verifications failed")
     return False, "LeetCode API unavailable. All verification methods are down.", None
 
